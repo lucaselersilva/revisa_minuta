@@ -166,6 +166,7 @@ function StepContent({
     return (
       <DocumentUpload
         caseId={state.caseItem.id}
+        officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
         allowedDocumentTypes={["initial_petition", "author_documents"]}
         allowedStages={["initial"]}
@@ -179,6 +180,7 @@ function StepContent({
     return (
       <DocumentUpload
         caseId={state.caseItem.id}
+        officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
         allowedDocumentTypes={["initial_amendment"]}
         allowedStages={["pre_analysis"]}
@@ -196,6 +198,7 @@ function StepContent({
     return (
       <DocumentUpload
         caseId={state.caseItem.id}
+        officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
         allowedDocumentTypes={["defense", "defense_documents"]}
         allowedStages={["defense"]}

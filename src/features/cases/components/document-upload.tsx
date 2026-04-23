@@ -7,8 +7,14 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { removeCaseDocumentAction, uploadCaseDocumentsAction } from "@/features/cases/actions/case-actions";
+import {
+  cleanupUploadedCaseFilesAction,
+  registerUploadedCaseDocumentsAction,
+  removeCaseDocumentAction
+} from "@/features/cases/actions/case-actions";
+import { buildCaseFilePath } from "@/features/cases/services/storage-path";
 import { caseDocumentStages, caseDocumentTypes } from "@/lib/validations/cases";
+import { createClient } from "@/lib/supabase/client";
 import type { CaseDocument, CaseDocumentStage, CaseDocumentType } from "@/types/database";
 
 const documentTypeLabels: Record<CaseDocumentType, string> = {
@@ -28,9 +34,18 @@ const stageLabels: Record<CaseDocumentStage, string> = {
 };
 
 const acceptedTypes = ".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt";
+const allowedMimeTypes = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+]);
 
 type Props = {
   caseId: string;
+  officeId: string;
   documents: CaseDocument[];
   allowedDocumentTypes?: CaseDocumentType[];
   allowedStages?: CaseDocumentStage[];
@@ -40,6 +55,7 @@ type Props = {
 
 export function DocumentUpload({
   caseId,
+  officeId,
   documents,
   allowedDocumentTypes = [...caseDocumentTypes],
   allowedStages = [...caseDocumentStages],
@@ -66,14 +82,60 @@ export function DocumentUpload({
   }
 
   function submitUpload() {
-    const formData = new FormData();
-    formData.set("case_id", caseId);
-    formData.set("document_type", documentType);
-    formData.set("stage", stage);
-    files.forEach((file) => formData.append("files", file));
+    const invalidFile = files.find((file) => !allowedMimeTypes.has(file.type));
+
+    if (invalidFile) {
+      toast.error(`Tipo de arquivo nao permitido: ${invalidFile.name}`);
+      return;
+    }
 
     startTransition(async () => {
-      const result = await uploadCaseDocumentsAction(formData);
+      const supabase = createClient();
+      const uploadedFiles: Array<{
+        file_path: string;
+        file_name: string;
+        file_size: number;
+        mime_type: string;
+      }> = [];
+
+      for (const file of files) {
+        const filePath = buildCaseFilePath({
+          officeId,
+          caseId,
+          stage,
+          documentType,
+          fileName: file.name
+        });
+
+        const { error: uploadError } = await supabase.storage.from("aa-case-files").upload(filePath, file, {
+          contentType: file.type,
+          upsert: false
+        });
+
+        if (uploadError) {
+          if (uploadedFiles.length > 0) {
+            await cleanupUploadedCaseFilesAction(uploadedFiles.map((item) => item.file_path));
+          }
+
+          toast.error(`Nao foi possivel enviar ${file.name}.`);
+          return;
+        }
+
+        uploadedFiles.push({
+          file_path: filePath,
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type
+        });
+      }
+
+      const result = await registerUploadedCaseDocumentsAction({
+        case_id: caseId,
+        document_type: documentType,
+        stage,
+        files: uploadedFiles
+      });
+
       if (result.ok) {
         toast.success(result.message);
         setFiles([]);

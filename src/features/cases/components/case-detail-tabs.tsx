@@ -62,7 +62,7 @@ export function CaseDetailTabs({ caseItem }: { caseItem: CaseDetail }) {
 
       {activeTab === "overview" ? <OverviewTab caseItem={caseItem} /> : null}
       {activeTab === "parties" ? <PartiesTab caseItem={caseItem} /> : null}
-      {activeTab === "documents" ? <DocumentUpload caseId={caseItem.id} documents={caseItem.documents} /> : null}
+      {activeTab === "documents" ? <DocumentUpload caseId={caseItem.id} officeId={caseItem.office_id} documents={caseItem.documents} /> : null}
       {activeTab === "history" ? <HistoryTab caseItem={caseItem} /> : null}
     </div>
   );

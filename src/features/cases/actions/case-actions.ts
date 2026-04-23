@@ -7,8 +7,15 @@ import { bootstrapCaseWorkflow } from "@/features/case-workflow/services/workflo
 import { getCurrentProfile } from "@/features/profiles/queries/get-current-profile";
 import { writeCaseHistory } from "@/features/cases/services/case-history-service";
 import { buildCaseFilePath } from "@/features/cases/services/storage-path";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { caseFormSchema, documentUploadSchema, type CaseFormInput } from "@/lib/validations/cases";
+import {
+  caseFormSchema,
+  documentUploadSchema,
+  registerUploadedCaseDocumentsSchema,
+  type CaseFormInput,
+  type RegisterUploadedCaseDocumentsInput
+} from "@/lib/validations/cases";
 import { writeAuditLog } from "@/services/audit-log-service";
 import type { CaseDocumentStage, CaseDocumentType } from "@/types/database";
 
@@ -295,6 +302,90 @@ export async function uploadCaseDocumentsAction(formData: FormData): Promise<Act
 
   revalidatePath(`/app/cases/${parsed.data.case_id}`);
   return { ok: true, message: uploadedRows.length === 1 ? "Documento enviado." : "Documentos enviados." };
+}
+
+export async function registerUploadedCaseDocumentsAction(
+  input: RegisterUploadedCaseDocumentsInput
+): Promise<ActionResult> {
+  const profile = await requireProfile();
+
+  if (!profile?.office_id) {
+    return { ok: false, message: "Perfil interno nao encontrado." };
+  }
+
+  const parsed = registerUploadedCaseDocumentsSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.errors[0]?.message ?? "Dados invalidos." };
+  }
+
+  const officePrefix = `${profile.office_id}/${parsed.data.case_id}/`;
+  const invalidPath = parsed.data.files.find((file) => !file.file_path.startsWith(officePrefix));
+
+  if (invalidPath) {
+    await cleanupUploadedCaseFilesAction(parsed.data.files.map((file) => file.file_path));
+    return { ok: false, message: "Um ou mais arquivos enviados nao pertencem ao processo atual." };
+  }
+
+  const invalidFile = parsed.data.files.find((file) => !allowedMimeTypes.has(file.mime_type));
+
+  if (invalidFile) {
+    await cleanupUploadedCaseFilesAction(parsed.data.files.map((file) => file.file_path));
+    return { ok: false, message: `Tipo de arquivo nao permitido: ${invalidFile.file_name}` };
+  }
+
+  const supabase = await createClient();
+  const uploadedRows = parsed.data.files.map((file) => ({
+    case_id: parsed.data.case_id,
+    uploaded_by: profile.id,
+    document_type: parsed.data.document_type,
+    file_path: file.file_path,
+    file_name: file.file_name,
+    file_size: file.file_size,
+    mime_type: file.mime_type,
+    stage: parsed.data.stage
+  }));
+
+  const { error } = await supabase.from("AA_case_documents").insert(uploadedRows);
+
+  if (error) {
+    await cleanupUploadedCaseFilesAction(uploadedRows.map((row) => row.file_path));
+    return { ok: false, message: "Upload concluido, mas nao foi possivel salvar os metadados." };
+  }
+
+  await writeCaseHistory({
+    caseId: parsed.data.case_id,
+    action: "document.uploaded",
+    profile,
+    metadata: {
+      count: uploadedRows.length,
+      document_type: parsed.data.document_type,
+      stage: parsed.data.stage,
+      files: uploadedRows.map((row) => row.file_name)
+    }
+  });
+
+  revalidatePath(`/app/cases/${parsed.data.case_id}`);
+  return { ok: true, message: uploadedRows.length === 1 ? "Documento enviado." : "Documentos enviados." };
+}
+
+export async function cleanupUploadedCaseFilesAction(filePaths: string[]) {
+  const profile = await requireProfile();
+
+  if (!profile?.office_id || filePaths.length === 0) {
+    return { ok: false };
+  }
+
+  const allowedPaths = filePaths.filter((path) => path.startsWith(`${profile.office_id}/`));
+
+  if (allowedPaths.length === 0) {
+    return { ok: false };
+  }
+
+  const adminSupabase = createAdminClient();
+  await adminSupabase.storage.from("aa-case-files").remove(allowedPaths);
+
+  return { ok: true };
 }
 
 export async function removeCaseDocumentAction(documentId: string, caseId: string, filePath: string): Promise<ActionResult> {

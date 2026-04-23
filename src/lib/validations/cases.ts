@@ -60,5 +60,17 @@ export const documentUploadSchema = z.object({
   stage: z.enum(caseDocumentStages)
 });
 
+export const uploadedCaseDocumentSchema = z.object({
+  file_path: z.string().min(1),
+  file_name: z.string().min(1),
+  file_size: z.number().int().positive(),
+  mime_type: z.string().min(1)
+});
+
+export const registerUploadedCaseDocumentsSchema = documentUploadSchema.extend({
+  files: z.array(uploadedCaseDocumentSchema).min(1, "Selecione ao menos um arquivo.")
+});
+
 export type CaseFormInput = z.infer<typeof caseFormSchema>;
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
+export type RegisterUploadedCaseDocumentsInput = z.infer<typeof registerUploadedCaseDocumentsSchema>;

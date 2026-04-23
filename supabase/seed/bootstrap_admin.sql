@@ -1,0 +1,19 @@
+-- 1. Crie o usuario admin no Supabase Auth Dashboard ou via CLI.
+-- 2. Remova os comentarios do bloco abaixo.
+-- 3. Substitua SUBSTITUA_PELO_UUID_DO_AUTH_USER pelo id real do usuario criado.
+-- 4. Execute este script no SQL Editor para vincular o perfil inicial ao office padrao.
+
+-- insert into public."AA_profiles" (id, office_id, full_name, role, is_active)
+-- values (
+--   'SUBSTITUA_PELO_UUID_DO_AUTH_USER',
+--   '00000000-0000-0000-0000-000000000001',
+--   'Administrador Abrahao',
+--   'admin',
+--   true
+-- )
+-- on conflict (id) do update
+-- set
+--   office_id = excluded.office_id,
+--   full_name = excluded.full_name,
+--   role = excluded.role,
+--   is_active = excluded.is_active;

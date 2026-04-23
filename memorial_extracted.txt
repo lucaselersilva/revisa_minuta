@@ -1,0 +1,657 @@
+
+MEMORIAL DO PROJETO
+Revisor de Peças Processuais MaxMilhas
+Abrahão Advogados + Arcebispo & Yarochewsky Advogados
+Este documento contém todas as premissas, decisões, definições técnicas e jurídicas, fluxos e pendências do projeto. Destina-se à continuidade do desenvolvimento em nova sessão de trabalho. Uso interno restrito.
+1. CONTEXTO GERAL DO PROJETO
+
+Campo
+Informação
+Nome do projeto
+Revisor de Peças Processuais MaxMilhas
+Cliente
+MaxMilhas – MM Turismo e Viagens S/A
+Escritórios
+Abrahão Advogados + Arcebispo & Yarochewsky Advogados
+Responsável
+Dr. Rafael Ramos Abrahão — rafaelramos.abrahao@gmail.com
+Domínio Google
+@abrahaoadvogados.com.br (Google Workspace)
+Stack tecnológica
+Google Apps Script + HTML/CSS/JS + API Anthropic (Claude)
+Referência técnica
+Monitor TJMG (já em produção) — mesmo padrão de desenvolvimento
+Sigilo da IA
+A plataforma NÃO pode ter referência ao Claude ou Anthropic na interface
+Volume atual
+25 processos / crescimento para 5.000
+Operação atual
+1 a 4 processos/dia; 3 defesas/semana; 2 advogados (operação + controladoria)
+
+1.1 Modelo de acesso
+A plataforma terá DUAS URLs distintas, servidas pelo mesmo Code.gs:
+URL 1 — Revisor: https://script.google.com/macros/s/[ID]/exec — todos os advogados com @abrahaoadvogados.com.br
+URL 2 — Painel de gestão: https://script.google.com/macros/s/[ID]/exec?page=admin — restrito por e-mail (lista de administradores configurável)
+Restrição via Session.getActiveUser().getEmail() — quem não for admin vê página de acesso negado
+Publicação: 'Qualquer pessoa do domínio @abrahaoadvogados.com.br' — Google cuida da autenticação
+
+✔ DECISÃO DEFINITIVA: Autenticação 100% Google — sem camada adicional de login/senha próprio.
+Justificativa: a autenticação Google corporativa já inclui 2FA, detecção de acesso suspeito e log de sessões gerenciado pelo Google Workspace. Senhas próprias armazenadas no GAS seriam mais vulneráveis, não mais seguras. A rastreabilidade de quem fez o quê e quando é coberta pelo log de auditoria interno do sistema, registrado automaticamente em cada revisão.
+
+Log de auditoria interno:
+Registrado automaticamente a cada acesso e a cada revisão: data, hora, e-mail do advogado, ação realizada
+Armazenado no Google Sheets restrito — visível apenas no painel de gestão
+Alimenta a ficha jurométrica: campo 'advogado responsável' em cada revisão
+Permite rastrear quem elaborou, quem revisou e quando — sem necessidade de senha adicional
+
+1.2 Padrão de chamada da API Anthropic
+⚠ Mesmo padrão do Monitor TJMG. A chave fica em PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY'). Modelo: claude-sonnet-4-5. Nunca expor a chave na interface.
+
+1.3 Sigilo e proteção de dados
+✔ DECISÃO DEFINITIVA: Todas as informações tratadas na plataforma são de uso interno e absoluto sigilo — especialmente os documentos de defesa, que envolvem documentação privada do cliente que pode nunca ser utilizada no processo.
+
+Camada
+Garantia
+API Anthropic
+Chamadas via API não são usadas para treinar modelos e não são armazenadas além do processamento. Garantia contratual da Anthropic para usuários da API — diferente do claude.ai.
+Google Apps Script
+Dados transitam pelo servidor Google sob contrato do Google Workspace corporativo (@abrahaoadvogados.com.br). Não são usados para fins publicitários ou de treinamento.
+Armazenamento
+Documentos salvos ficam exclusivamente no Google Workspace do domínio @abrahaoadvogados.com.br — fora do alcance de terceiros.
+Documentos de defesa
+Armazenados no Google Drive com permissão restrita por processo — não acessíveis a todo o domínio. Apenas metadados (nome, data, tipo) ficam no Sheets. Conteúdo sensível nunca em texto puro em planilha.
+Acesso por processo
+Permissão do Drive restrita aos advogados vinculados ao caso — configurável pelo administrador.
+
+
+2. EMPRESAS DO GRUPO REPRESENTADAS
+⚠ O revisor deve identificar automaticamente qual empresa está no polo passivo e verificar se a contestação a cobre adequadamente. Cias aéreas (GOL, LATAM, Azul) NÃO são defendidas pelo escritório — outro escritório cuida.
+✔ DECISÃO DEFINITIVA: A lista de empresas e pessoas físicas representadas é editável pelo administrador no painel de gestão. Pode incluir pessoa física. O advogado junior não tem acesso a essa configuração.
+
+Razão Social / Nome
+CNPJ / CPF
+Observação
+MaxMilhas – MM Turismo e Viagens S/A
+16.988.607/0001-61
+Agência de Viagens
+123 Milhas – 123 Viagens e Turismo LTDA
+26.669.170/0001-57
+Agência de Viagens
+Hotmilhas – Art Viagens e Turismo LTDA
+11.442.110/0001-20
+Plataforma de milhas
+123 Fidelidade
+26.669.170/0001-57
+Programa de recompensas da 123 Viagens
+AMRM Holding LTDA
+48.964.857/0001-58
+Holdings — inst. não financeiras
+Hamrm LTDA
+50.160.552/0001-35
+Holdings — inst. não financeiras
+Novum Investimentos Participações S/A
+26.941.940/0001-79
+Holdings — inst. não financeiras
+Fidei Empreendimentos e Participações S/A
+21.672.448/0001-21
+Sem categoria definida ainda
+
+Endereço sede (MaxMilhas, 123 Milhas, Hotmilhas, 123 Fidelidade): Rua Matias Cardoso, nº 169 - 10º andar - Santo Agostinho, Belo Horizonte – MG - CEP: 30170-050
+Holdings (AMRM, Hamrm): Rua Paraíba, nº 330 - Funcionários, Belo Horizonte – MG - CEP: 30130-917
+
+2.1 Regras de polo passivo
+Cia aérea no polo passivo → NÃO é lacuna da contestação — defesa por outro escritório
+Empresa do grupo no polo passivo → VERIFICAR cobertura na contestação
+Sócio/administrador no polo passivo → EXIGE tese de ilegitimidade passiva ou resposta à desconsideração da PJ
+Múltiplas empresas do grupo → verificar cobertura individual de cada uma
+Pessoa física cadastrada no painel → tratada com as mesmas regras de cobertura das pessoas jurídicas
+
+
+3. TAXONOMIA DOS TIPOS DE CASO
+✔ DECISÃO DEFINITIVA: A taxonomia de tipos de caso é editável pelo administrador no painel de gestão. Novos tipos podem ser criados, existentes podem ser alterados ou desativados. O advogado junior não tem acesso a essa configuração.
+✔ DECISÃO DEFINITIVA: Cada tipo de caso possui um modelo base de contestação vinculado — texto aprovado pelo escritório e validado com o cliente (MaxMilhas). Esse modelo é a referência que a IA usa para revisar a contestação do junior. Também editável apenas pelo administrador.
+⚠ Os tipos abaixo são o estado atual da taxonomia — exemplos não exaustivos. Serão formatados e expandidos quando o sistema estiver em operação.
+
+Grupo A — Reembolso e estorno
+Código
+Descrição
+A1
+Ausência de reembolso após cancelamento unilateral pela ré — CASO MAIS FREQUENTE
+A2
+Demora excessiva no reembolso de passagens canceladas
+A3
+Discordância quanto às regras de reembolso — autor alega ter cancelado dentro do prazo
+
+Grupo B — Cancelamento com impacto na viagem
+Código
+Descrição
+B1
+Cancelamento unilateral que compeliu a parte autora a viajar por via terrestre
+B2
+Cancelamento sem aviso prévio + impossibilidade de recompra + transporte terrestre (variante agravada de B1)
+B3
+Cancelamento motivado por variação no valor das milhas — reputado indevido pelo autor
+
+Grupo C — Alteração de voo e embarque impedido
+Código
+Descrição
+C1
+Alteração unilateral do voo pela companhia aérea — autor impedido de embarcar no novo horário
+C2
+Alteração do voo originalmente contratado que inviabilizou o embarque (variante de C1)
+⚠ C1 e C2 são praticamente o mesmo caso — responsabilidade primária da cia aérea. MaxMilhas como intermediadora. Podem ser fundidos num único modelo com variações.
+
+Grupo D — Falha no atendimento e cancelamento a pedido
+Código
+Descrição
+D1
+Necessidade de remarcação de voo — falha no atendimento da ré
+D2
+Cancelamento por razões médicas (espondilose) — sem êxito junto à ré
+D3
+Cancelamento por razões médicas sem restituição de valores (variante de D2)
+D4
+Exercício do direito de arrependimento (24h) + cobrança indevida + ausência de reembolso — art. 49 CDC
+⚠ D4 tem tese completamente diferente dos demais — envolve art. 49 CDC e prazo legal de 7 dias para contratos fora do estabelecimento. Exige verificação do prazo real da compra.
+
+Grupo E — Erros na emissão
+Código
+Descrição
+E1
+Erro no nome do passageiro + negativa de correção pela ré — verificar responsabilidade pelo erro
+E2
+Itinerário invertido + negativa de alteração/reembolso + autor obrigado a comprar novas passagens
+
+
+4. TESES JURÍDICAS CONSOLIDADAS
+✔ DECISÃO DEFINITIVA: As teses jurídicas são editáveis pelo administrador no painel de gestão. Podem ser adicionadas, alteradas ou desativadas conforme evolução da jurisprudência. O advogado junior não tem acesso a essa configuração.
+
+4.1 Teses por tipo de caso
+⚠ As teses listadas abaixo são exemplos — não se aplicam automaticamente a todos os casos. Serão formatadas e vinculadas a cada tipo de caso (A1–E2) quando o sistema estiver em operação, conforme validação do time.
+Ausência de responsabilidade solidária
+Ilegitimidade passiva (MaxMilhas como intermediadora, não prestadora direta do transporte)
+Referência obrigatória: STJ, AgInt nos EDcl no REsp 2066248/SP, Rel. Min. Ricardo Villas Bôas Cueva, julgado em 08/04/2024, T3 — agências de turismo não respondem solidariamente pela má prestação dos serviços na hipótese de simples intermediação de venda de passagens aéreas
+
+4.2 Fundamentos mal aplicados pelo autor — sempre rebater
+⚠ Leque a ser expandido futuramente conforme novos padrões identificados na carteira.
+Art. 14 CDC aplicado sem considerar que a empresa atua como intermediadora, não como prestadora direta
+Responsabilidade solidária sem demonstração de nexo causal
+Resolução ANAC 400/2016 aplicada à MaxMilhas — destina-se às companhias aéreas
+Dano moral presumido em situações de mero inadimplemento
+Oferta como contrato perfeito, ignorando necessidade de confirmação da emissão da passagem
+
+4.3 Outras teses por situação
+⚠ Formato consolidado — leque a ser ampliado futuramente.
+Situação
+Tese
+Reembolso realizado, autor ainda pleiteia moral
+Mero aborrecimento — sem violação de direito da personalidade
+Compra por terceiro (cartão/cadastro alheio)
+Ilegitimidade ativa — autor não é parte contratante
+Demora no reembolso
+Responsabilidade da administradora do cartão, fora do controle da MaxMilhas — art. 14 §3º II CDC (fato de terceiro)
+Recobrança após estorno
+Ato da administradora do cartão, não da MaxMilhas — fato de terceiro
+Passageiro idoso como agravante
+Verificar efetivamente a idade — erro comum na inicial
+Presença de vulnerável/idoso
+Verificar limitações reais — analfabetismo, condições físicas, etc.
+Litisconsórcio
+Verificar legitimidade e nexo causal individual de cada autor
+
+4.4 Formato e obrigatoriedades da contestação
+⚠ Os campos obrigatórios por tipo de caso serão inseridos pelo administrador quando o sistema estiver em operação, conforme validação com o cliente e o FGE de cada caso. A qualificação da empresa réu (CNPJ, situação jurídica) deve ser sempre verificada antes da contestação — pode mudar com o tempo.
+Bloco de pontos relevantes da defesa em bullets no início
+Estrutura de seções 1 a 5: Síntese dos fatos → Antecedentes → Preliminares → Mérito → Pedidos
+Qualificação correta da empresa ré com CNPJ — verificar situação jurídica atual
+Pedido de cadastramento do advogado: Dr. Rafael Ramos Abrahão, OAB/MG 151.701 / OAB/SP 503.868 — art. 272 §5º CPC
+Protesto pela produção de provas
+Pedido subsidiário (condenação em patamar mínimo)
+Extinção pelas preliminares OU improcedência total + subsidiário
+
+
+5. FLUXO COMPLETO DO REVISOR (7 ETAPAS)
+⚠ O revisor é um formulário GUIADO — o advogado junior não pode pular etapas. Cada campo obrigatório deve ser confirmado antes de avançar. O fluxo foi expandido para 7 etapas com a inclusão do Laudo Prévio obrigatório entre as Etapas 3 e 4.
+
+Etapa 1 — Entendendo o caso
+O advogado junior preenche campos descritivos. A IA classifica e valida na sequência — o junior não seleciona FGE nem tipo de caso.
+
+O que o advogado preenche:
+Número do processo
+Partes autoras (nome + CPF de cada uma)
+Dados do escritório adverso — nome, CNPJ, advogado, OAB
+Visão livre do caso — campo de texto aberto: advogado descreve com suas palavras o que entende do caso
+3 perguntas obrigatórias de triagem:
+   → Qual o principal problema da ação?
+   → Há pedido de reembolso? (sim / não)
+   → Houve cancelamento? (sim / não)
+
+O que a IA faz depois:
+Classifica o FGE (família, gênero, espécie) automaticamente
+Identifica o tipo de caso (A1–E2) automaticamente
+Confronta a classificação com as respostas do advogado — sinaliza divergência se houver
+Identifica automaticamente qual empresa do grupo está no polo passivo
+Verifica nos documentos do autor se a empresa identificada está corretamente no polo passivo ou se deveria ser outra empresa do grupo
+Registra o perfil do escritório adverso para cruzamento e histórico futuro
+
+Etapa 2 — Inicial e documentos
+Entrada da matéria-prima do caso. Auditoria 1 executada automaticamente pela IA em três frentes.
+
+O que o advogado faz:
+Upload da petição inicial
+Documentos obrigatórios por autor — individualmente em litisconsórcio:
+   → Documento de identificação: RG, CPF ou CNH — um basta
+   → Comprovante de endereço
+   → Procuração
+Documentos complementares (não obrigatórios): e-mails, bilhetes, fatura de cartão, prints do app, Reclame Aqui, WhatsApp
+⚠ O sistema NÃO avança sem confirmação de cada campo por autor. Em litisconsórcio, exige os 3 campos individualmente para cada parte.
+
+Auditoria 1 — três análises automáticas da IA:
+
+(a) Realidade do caso
+Reconstrói a narrativa: partes, fatos alegados, pedidos, valor da causa
+Mapeia pedido principal, danos morais, danos materiais
+Identifica menção a idoso ou vulnerável — com verificação de idade real
+
+(b) Auditoria do autor
+Cruza documentos entre si e contra a inicial
+Detecta inconsistências: endereço em nome de terceiro, cadastro em nome de terceiro, cartão em nome de terceiro, código de compra divergente, procuração assinada em cidade incompatível
+Verifica idade real vs. alegação de idoso ou vulnerável
+Cada inconsistência vira achado rotulado com nível de risco: Crítico / Relevante / Observação
+
+(c) Auditoria do processo
+Identifica qual empresa do grupo está no polo passivo e se há cobertura prevista
+Verifica presença de sócio/administrador no polo — sinaliza necessidade de tese de ilegitimidade passiva
+Confirma se a classificação da Etapa 1 bate com o conteúdo da inicial
+Identifica o 'comprador real' nos documentos (titular do cadastro, cartão, Reclame Aqui, WhatsApp) — alimenta busca no DataJud
+Se documentos que revelariam o comprador real não foram juntados → sinalização de pendência antes de avançar
+
+O que sai da Etapa 2:
+Retrato do caso — narrativa estruturada, pedidos mapeados, partes identificadas
+Lista de achados documentais — inconsistências numeradas com nível de risco
+Lista de compradores reais identificados — nomes e documentos para busca no DataJud
+⚠ REGRA CRÍTICA: o endereçamento do processo é sempre verificado pela EMENDA À INICIAL ou pelo despacho de distribuição, NUNCA pela petição inicial original.
+
+Bifurcação — Houve emenda à inicial?
+NÃO → segue para o Laudo Prévio
+SIM → abre Etapa 3 com documentos e fatos da emenda
+
+Etapa 3 — Emenda à inicial (quando houver)
+
+O que o advogado faz:
+Upload dos novos documentos juntados (RGs, procurações, comprovantes novos)
+Indicação de novas partes incluídas
+Indicação de novos pedidos
+OPÇÃO OBRIGATÓRIA: 'Nenhum documento novo foi juntado' — advogado confirma conscientemente, não pode pular
+
+O que a IA faz:
+Atualiza o retrato do caso com fatos supervenientes
+Incorpora novos documentos à Auditoria 1
+Reavalia achados anteriores à luz dos novos documentos
+Registra novos pedidos para confronto futuro com a contestação
+
+Laudo Prévio — Diagnóstico antes da defesa (OBRIGATÓRIO)
+Emitido automaticamente ao término das Etapas 1+2+3. A Etapa 4 fica bloqueada até o advogado confirmar a leitura do laudo. Não é opcional.
+✔ DECISÃO DEFINITIVA: O laudo prévio é documento interno, de uso exclusivo da equipe jurídica, protegido pelo sigilo profissional (art. 7º, II, Estatuto da OAB). Jamais deve ser compartilhado com o autor, com o juízo ou com terceiros.
+✔ DECISÃO DEFINITIVA: Tom obrigatório: indicativo e sugestivo — nunca acusatório, conclusivo ou que atribua má-fé. A IA é instruída explicitamente a usar linguagem técnica-sugestiva em todo o laudo.
+
+Cabeçalho obrigatório do laudo:
+DOCUMENTO INTERNO — USO EXCLUSIVO DA EQUIPE JURÍDICA — PROTEGIDO PELO SIGILO PROFISSIONAL (art. 7º, II, Estatuto da OAB) — VEDADA A DIVULGAÇÃO A TERCEIROS
+
+Conteúdo do laudo prévio:
+Retrato do caso — narrativa, partes, pedidos, valor da causa
+Achados documentais — inconsistências identificadas, com nível de risco (indicativo, não acusatório)
+Resultado da busca de litigância — histórico dos autores e compradores reais identificados
+Análise do polo passivo — empresa correta, presença de sócios, cobertura prevista
+Pontos de atenção para a defesa — sugestões ao advogado antes de elaborar a contestação
+Rol de documentos recomendados para a defesa:
+   → Documentos obrigatórios para o tipo de caso (definidos pelo administrador)
+   → Documentos sugeridos com base em casos anteriores da carteira — inteligência acumulada
+⚠ O rol sugerido com base em casos anteriores começa vazio e vai ficando mais inteligente conforme o volume de processos cresce. Requer que a ficha jurométrica registre, em cada caso encerrado, quais documentos foram juntados e qual foi o resultado.
+
+Registro do laudo:
+Laudo registrado na pasta do processo com data e hora de emissão
+Confirmação de leitura pelo advogado registrada (e-mail + timestamp)
+Somente após confirmação o sistema libera acesso à Etapa 4
+
+Etapa 4 — Contestação e documentos da defesa
+Entrada da defesa + Auditoria 2 (complementar). Disponível somente após confirmação de leitura do Laudo Prévio.
+
+O que o advogado faz:
+Upload da contestação elaborada
+Upload dos documentos da defesa — dinâmicos por tipo de caso A1–E2:
+
+Tipo
+Documentos obrigatórios da defesa (pendente validação final)
+A1
+Comprovante de estorno (ou ausência justificada) + e-mail de cancelamento MaxMilhas
+A2
+Comprovante de estorno com data + timeline da operação
+A3
+Termos e condições da tarifa contratada + histórico de atendimento
+B1/B2
+E-mail de cancelamento + histórico de atendimento
+B3
+Extrato da variação de milhas + histórico de atendimento
+C1/C2
+Comunicado de alteração da cia aérea + histórico de atendimento
+D1
+Histórico de atendimento + registro da tentativa de remarcação
+D2/D3
+Histórico de atendimento + política de cancelamento por motivo médico
+D4
+Registro da solicitação com data/hora + política de cancelamento 24h
+E1
+Histórico de atendimento + política de correção de dados
+E2
+Registro da compra + histórico de atendimento
+⚠ PENDENTE: Validação final da matriz com o time. Os documentos da defesa devem ser coerentes com o modelo base de contestação validado com o cliente para cada tipo de caso.
+
+Auditoria 2 — análise complementar (executada automaticamente):
+
+(a) Reavaliação dos achados da Auditoria 1
+Cada achado anterior é reaberto à luz dos documentos da defesa
+Achado com suporte documental → status 'comprovado' (vira argumento da defesa)
+Achado sem suporte documental → status 'sem suporte' ou 'lacuna documental' conforme o tipo de caso
+
+(b) Geração de achados novos a partir dos documentos da defesa
+Histórico de atendimento mostra contato do autor fora do prazo alegado
+Comprovante de estorno com data anterior à ação — autor omitiu
+Política de cancelamento contradiz o que o autor afirma ter sido prometido
+Timeline da operação mostra responsabilidade primária da cia aérea, não da MaxMilhas
+
+(c) Tratamento da ausência de documento — lógica por tipo de caso
+Situação
+Comportamento do sistema
+Status
+Ponto que EXIGE documento (ex: comprovante de estorno em A1)
+Lacuna documental
+❌ Crítico se não sanada
+Ponto que ADMITE argumento sem documento (ex: tese de intermediação)
+Alerta — advogado decide
+⚠️ Requer ajuste
+Ponto NÃO APLICÁVEL ao tipo de caso
+Silêncio
+Não aparece no relatório
+⚠ A parametrização 'exige documento' vs. 'admite argumento' por tipo de caso (A1–E2) é parte da Matriz pendente de validação.
+
+O que sai da Etapa 4:
+Mapa consolidado das Auditorias 1 e 2 — visão unificada com origem e status final de cada achado
+Lista de lacunas documentais identificadas
+Análise cruzada inicial × contestação — pedidos enfrentados vs. não enfrentados
+
+Etapa 5 — Apresentação ao advogado
+O sistema exibe tudo que foi analisado antes do relatório final. O advogado revisa, confronta e confirma — ou sinaliza ajuste.
+
+O que o sistema apresenta:
+Inicial × contestação — todos os pedidos foram enfrentados?
+Emenda à inicial × contestação — fatos supervenientes foram tratados?
+Documentos do autor × contestação — inconsistências foram exploradas?
+Documentos da defesa × contestação — documentos sustentam as teses e o modelo base validado?
+Mapa consolidado das Auditorias 1 e 2 — origem e status de cada achado
+Resultado da busca de litigância — outros processos encontrados
+Formato do escritório × contestação — estrutura, preliminares, pedidos, qualificação
+
+O que o advogado faz:
+Revisa cada item apresentado
+Confirma o que está correto
+Sinaliza ajustes nos itens que discorda ou quer complementar
+Após confirmação, libera o relatório final (Etapa 6)
+
+Etapa 6 — Relatório final
+A Etapa 6 gera DUAS saídas automaticamente pela IA, sem intervenção do advogado. Conteúdo novo — não é repetição da Etapa 5.
+
+Saída 1 — Relatório operacional
+Destinatário: advogado, gestor, sócio. Foco: o processo individual.
+
+Status
+Critério
+✅ Aprovado
+Todos os itens CONFORME, sem itens AUSENTE, itens INCOMPLETO não impactam mérito
+⚠️ Requer ajuste
+Itens INCOMPLETO que impactam o mérito OU lacunas em pedidos
+❌ Crítico
+Ausência de enfrentamento de pedido / ausência de tese essencial / não análise de fatos relevantes / outros processos dos autores encontrados
+
+Conteúdo:
+Scoring da peça — grau de risco numérico e justificativa
+Conformidade da contestação — critério por critério
+Mapa consolidado das Auditorias 1 e 2 — achados com origem e status final
+Sugestões automáticas de texto para itens INCOMPLETO
+Resultado da busca de litigância — outros processos dos autores
+Governance log — registro completo da revisão (quem, quando, o que foi analisado, status)
+Alerta automático por e-mail para sênior + sócio responsável nos casos ⚠️ e ❌
+⚠ REGRA DE SEGURANÇA: os e-mails de alerta são configurados no painel de gestão restrito. O advogado junior não vê, não altera e não sabe quem recebe.
+
+Saída 2 — Ficha jurométrica
+Destinatário: escritório + cliente (MaxMilhas). Foco: a carteira como um todo — subsidiar decisões sobre esteiras de defesa, produção de documentos e análises judiciais.
+Gerada 100% automaticamente pela IA. Atualizada a cada nova revisão do mesmo processo. Armazenada como registro estruturado vinculado ao número do processo.
+
+Grupo de campos
+Conteúdo
+Identificação
+Número do processo, comarca, estado, vara/juízo, juiz titular, data de distribuição, fase atual
+Partes
+Autores (nome, CPF, idade), réus (empresa do grupo, sócios se houver), escritório adverso, advogado adverso + OAB
+Classificação
+FGE, tipo de caso (A1–E2)
+Valores
+Valor da causa, pedido de danos morais por autor, pedido de danos materiais — atualizado a cada revisão
+Esteira de defesa
+Teses utilizadas, documentos juntados, inconsistências exploradas — acumulativo por revisão
+Análise judicial
+Padrões do juízo, histórico de litigância dos autores, compradores reais identificados
+Histórico de revisões
+Data, tipo de peça, status (✅/⚠️/❌), scoring, advogado responsável — acumulativo
+
+O que a ficha viabiliza:
+Identificar quais tipos de caso (A1–E2) concentram mais risco na carteira
+Mapear quais comarcas e juízes são mais adversos
+Detectar quais documentos o cliente precisa produzir ou melhorar
+Avaliar quais teses estão funcionando e quais precisam ser revistas
+Detectar escritórios adversos com padrão de litigância predatória
+Alimentar o rol de documentos sugeridos no Laudo Prévio de casos futuros
+Alimentar relatórios periódicos para o cliente sobre a evolução da carteira
+
+Arquitetura de pasta por processo
+Cada processo vive em uma pasta acumulativa. Quando uma nova petição chega (réplica, impugnação, embargos), o advogado abre uma nova revisão vinculada à pasta existente — não começa do zero. A IA herda todo o contexto já analisado.
+
+Camada
+Função
+Google Sheets
+Ficha jurométrica + índice de revisões + log de auditoria — dados estruturados, consultáveis. Uma linha por processo.
+Google Drive
+Documentos de cada revisão — petições, contestações, laudos prévios, relatórios. Uma pasta por número de processo, acesso restrito.
+Chave primária
+Número do processo — vincula Sheets e Drive em todas as revisões.
+⚠ Decisão final de onde a pasta vive (Drive + Sheets vs. outra solução) ainda em aberto. Estrutura lógica definida — implementação técnica a confirmar.
+
+
+6. CRITÉRIOS DE CONFORMIDADE DA CONTESTAÇÃO
+
+6.1 Lacunas bloqueantes vs toleráveis
+Tipo
+Exemplos
+BLOQUEANTE (❌ Crítico)
+Ausência de enfrentamento de pedido / Ausência de tese essencial / Não análise de fatos relevantes / Outros processos dos autores encontrados
+TOLERÁVEL (⚠️ Requer ajuste)
+Falhas formais menores / Ajustes de redação / Itens INCOMPLETO que não impactam mérito
+
+6.2 Erros mais comuns dos advogados juniores
+Usar modelo sem adaptar ao caso concreto
+Não enfrentar todos os pedidos da inicial
+Confundir relação contratual da MaxMilhas com regulamentação da ANAC
+Não analisar adequadamente os documentos juntados pelo autor
+Não tratar fatos supervenientes da emenda à inicial
+
+6.3 Maior fonte de retrabalho atual
+Uso de modelo genérico sem adaptação ao caso concreto
+Ausência de enfrentamento de pontos específicos da inicial
+Desconexão entre a contestação e os documentos/subsídios disponíveis
+
+6.4 Documentos problemáticos do autor
+Documento
+Problema típico
+Chat de atendimento MaxMilhas
+Mais problemático para a defesa — requer verificação de autenticidade
+Print do app do cartão de crédito
+Frequentemente incompleto — não comprova o que alega
+Comprovante de endereço
+Pode estar em nome de terceiro (ex: caso Débora Eduarda)
+Procuração eletrônica (Clicksign)
+Geralmente aceita pelos juízes com baixa resistência judicial
+
+6.5 Documentos que os juízes costumam pedir e às vezes faltam
+Comprovante EFETIVO de reembolso (com data de processamento)
+Timeline da operação (sequência cronológica dos eventos)
+
+6.6 Verificação cruzada de assinaturas
+⚠ Checklist explícito obrigatório — o revisor deve comparar a assinatura da procuração com a do documento de identificação de cada autor. Decisão pendente: bloquear o fluxo ou apenas alertar no relatório.
+Procuração de Maria Ivanilda × RG SDS-PE → visualmente compatíveis ✅
+Procuração de Neywender Kelly × RG SDS-PE → visualmente compatíveis ✅
+Procuração de Rosineide Mendes × RG SSP-SP → visualmente compatíveis ✅
+ATENÇÃO: as 3 procurações manuscritas assinadas em 'Goiânia' (sede Teodoro e Lima) — autoras residem em SP
+
+
+7. PROCESSO DE REFERÊNCIA ANALISADO
+
+Campo
+Informação
+Número
+4004184-20.2026.8.26.0001
+Juízo
+2º Juizado Especial Cível da Regional de Santana – SP
+Tipo de caso
+A1 — Ausência de reembolso após cancelamento unilateral
+Autoras
+Maria Ivanilda da Silva (58 anos, idosa ✅) / Neywender Kelly da Silva Almeida (21 anos, NÃO idosa ✅) / Rosineide Mendes da Silva (62 anos, idosa ✅)
+Réus originais
+MaxMilhas MM Turismo e Viagens S/A
+Réus via emenda
+GOL incluída — defesa por outro escritório
+Escritório do autor
+Teodoro e Lima Advocacia — CNPJ 34.070.655/0001-58, Goiânia/GO
+Advogado do autor
+Diogo Teodoro da Silva — OAB/GO 56.707 + inscrição suplementar OAB/SP 541.784
+Pedido de danos morais
+R$ 12.000 por autora
+Pedido de danos materiais (emenda)
+R$ 2.726,75 — recobrança indevida no cartão após estorno
+
+7.1 Achados críticos do processo de referência
+Documentais:
+Comprovante de endereço (END5/Vivo) em nome de Débora Eduarda Dantas Silva — não é autora
+E-mail de cancelamento MaxMilhas e Reclame Aqui em nome de Wandeilson meme da Silva (nasc. 21/11/1991) — não é autor
+Cartão Final 4886 em nome de Maria D L R Santos — não é autora
+Código de compra divergente: DOC9 = 11104524 vs DOC11 = 11104654
+Procuração de Rosineide assinada de Arcoverde/PE (eletrônica) e de Goiânia (manuscrita) — reside em SP
+Comprovante Pix (Edgar Beserra Mendes → José Milton Araújo) e e-mail BV (Maria do Livramento) — nomes completamente estranhos ao processo
+
+Sobre Neywender Kelly:
+Nascida em 29/02/2004 — tem 21 anos na data da compra (31/12/2025)
+NÃO É IDOSA — fragiliza o argumento de agravamento do dano moral por presença de idosas
+
+Sobre o comprador real:
+Wandeilson meme da Silva, nasc. 21/11/1991 — titular do cadastro MaxMilhas
+Maria D L R Santos — titular do cartão Final 4886
+Nenhuma das autoras tem vínculo contratual direto demonstrado com a MaxMilhas
+
+Conformidade da contestação: 68/100
+Conformes: 13 critérios
+Incompletos: 4 critérios (recobrança R$ 2.726,75, cobrança concentrada das parcelas, danos materiais da emenda, passageiras idosas como agravante)
+Ausentes: 3 critérios (recobrança superveniente, passageiras idosas, GOL — N/A)
+
+
+8. PAINEL DE GESTÃO (URL RESTRITA)
+⚠ URL separada da plataforma do revisor. Acesso restrito por e-mail @abrahaoadvogados.com.br — lista de administradores configurável no próprio painel. O advogado junior nunca vê esta área.
+
+8.1 Funcionalidades do painel
+Configuração de e-mails de alerta (sênior + sócio responsável)
+Lista de administradores do sistema
+Log de revisões realizadas — quem fez o quê e quando
+Indicadores: volume de processos, % aprovados, % com ajuste, % críticos, tempo médio de revisão
+Aba 'Outros processos dos autores' — histórico das buscas de litigância
+Gestão da lista de empresas e pessoas físicas representadas — editável pelo admin
+Gestão da taxonomia de tipos de caso (A1–E2) — editável pelo admin
+Gestão dos modelos base de contestação por tipo de caso — editável pelo admin
+Gestão das teses jurídicas consolidadas — editável pelo admin
+Gestão dos documentos obrigatórios por tipo de caso — editável pelo admin
+
+8.2 Regra de segurança dos e-mails de alerta
+Os destinatários dos alertas automáticos são configurados APENAS no painel de gestão restrito. A operação NÃO pode interferir nessa configuração em hipótese alguma. O advogado junior não sabe quem recebe os alertas.
+
+
+9. MÓDULO DE BUSCA DE LITIGÂNCIA (DataJud)
+
+9.1 Lógica completa da busca
+Situação
+Ação do sistema
+CPF disponível nos docs
+Busca nome + CPF combinados — resultado mais preciso
+CPF não disponível
+Busca por nome → se resultado elevado → solicita CPF como informação complementar
+Nome genérico sem CPF
+Retorna aviso 'resultado elevado — filtrar manualmente' + lista para o advogado
+Comprador real identificado nos docs
+Dispara busca automática pelo nome identificado
+Docs que revelariam comprador real não juntados
+Sinalização de pendência — exige os documentos antes de avançar
+Qualquer resultado encontrado
+Eleva status para CRÍTICO — mas revisão não é bloqueada
+Nenhum resultado encontrado
+Registra como 'sem processos anteriores identificados' no relatório
+
+9.2 Endpoint e queries DataJud
+Mesma API key e endpoint do Monitor TJMG (DATAJUD_KEY + DATAJUD_ENDPOINT)
+
+
+10. PENDÊNCIAS ABERTAS
+⚠ Itens que precisam ser resolvidos antes ou durante o desenvolvimento da plataforma.
+
+Pendência
+Prioridade
+Observação
+Matriz de documentos obrigatórios por tipo de caso (A1-E2)
+ALTA
+Rascunho na seção 5 — aguarda validação final do time
+Parametrização Auditoria 2: exige documento vs. admite argumento por tipo
+ALTA
+Decisão tomada — implementação depende da validação da matriz
+E-mails dos destinatários de alerta (sênior + sócio)
+ALTA
+Serão configurados no painel de gestão — não no código
+Decisão final sobre repositório da pasta do processo
+ALTA
+Estrutura lógica definida — implementação técnica a confirmar
+Modelos base de contestação por tipo de caso (A1–E2)
+ALTA
+Precisam ser elaborados e validados com o cliente antes do desenvolvimento
+Visual da plataforma
+MÉDIA
+Identidade do Monitor TJMG ou nova identidade com duas logos?
+Definição dos e-mails administradores do painel
+MÉDIA
+Quem terá acesso ao painel de gestão restrito?
+Política de cancelamento MaxMilhas (24h e prazos)
+MÉDIA
+Necessário para parametrizar D4
+Fluxo de cancelamento e estorno com operadora de cartão
+MÉDIA
+Necessário para parametrizar A1 e A2
+Checklist de verificação cruzada de assinaturas (procuração × ID)
+MÉDIA
+Decisão pendente: bloquear o fluxo ou apenas alertar no relatório?
+Campos adicionais da ficha jurométrica — validação com o time
+MÉDIA
+Base definida — time pode querer acrescentar campos do negócio
+Teses específicas vinculadas a cada tipo de caso (A1-E2)
+MÉDIA
+Decidido que não são universais — precisam ser parametrizadas por tipo
+Litigância: Wandeilson meme da Silva e Maria D L R Santos
+BAIXA
+Verificar se ajuizaram processo pela mesma causa raiz
+Versão inicial do system prompt consolidado
+BAIXA
+Após aprovação do fluxo completo e validação da matriz
+
+Memorial atualizado ao final da sessão 5 (desenvolvimento) — Abrahão Advogados | Arcebispo & Yarochewsky Advogados | Uso interno restrito

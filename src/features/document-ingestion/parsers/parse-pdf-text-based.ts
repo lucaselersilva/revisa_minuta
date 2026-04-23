@@ -7,6 +7,7 @@ function normalizePdfText(text: string) {
 }
 
 let pdfRuntimePrepared = false;
+let pdfWorkerPrepared = false;
 
 async function ensurePdfRuntimeGlobals() {
   if (pdfRuntimePrepared) {
@@ -36,14 +37,37 @@ async function ensurePdfRuntimeGlobals() {
   pdfRuntimePrepared = true;
 }
 
+type PdfParseConstructor = {
+  new (options: { data: Buffer }): {
+    getText: () => Promise<{ text?: string; pages?: Array<unknown> }>;
+    destroy: () => Promise<void>;
+  };
+  setWorker: (workerSource: string) => void;
+};
+
+async function ensurePdfWorker() {
+  if (pdfWorkerPrepared) {
+    return;
+  }
+
+  const [{ PDFParse }, { getData }] = (await Promise.all([
+    import("pdf-parse"),
+    import("pdf-parse/worker")
+  ])) as [
+    { PDFParse: PdfParseConstructor },
+    { getData: () => string }
+  ];
+
+  PDFParse.setWorker(getData());
+  pdfWorkerPrepared = true;
+}
+
 export async function parsePdfTextBased(buffer: Buffer): Promise<ParserResult> {
   await ensurePdfRuntimeGlobals();
+  await ensurePdfWorker();
 
   const { PDFParse } = (await import("pdf-parse")) as {
-    PDFParse: new (options: { data: Buffer }) => {
-      getText: () => Promise<{ text?: string; pages?: Array<unknown> }>;
-      destroy: () => Promise<void>;
-    };
+    PDFParse: PdfParseConstructor;
   };
   const parser = new PDFParse({ data: buffer });
 

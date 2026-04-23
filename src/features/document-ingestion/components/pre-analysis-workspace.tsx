@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { acknowledgePreAnalysisReportAction, generatePreAnalysisReportAction } from "@/features/ai/actions/pre-analysis-actions";
-import type { PreAnalysisReportOutput } from "@/features/ai/types/pre-analysis-report";
+import { normalizePreAnalysisReportPayload, type PreAnalysisReportOutput } from "@/features/ai/types/pre-analysis-report";
 import { processCaseInitialDocumentsAction } from "@/features/document-ingestion/actions/document-ingestion-actions";
 import { documentTypeLabels } from "@/features/cases/components/document-upload";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -31,7 +31,17 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
     () => snapshot?.reports.find((report) => report.id === selectedReportId) ?? snapshot?.latestReport ?? null,
     [selectedReportId, snapshot]
   );
-  const selectedReportJson = selectedReport?.report_json as PreAnalysisReportOutput | null;
+  const selectedReportJson = useMemo(() => {
+    if (!selectedReport?.report_json) {
+      return null;
+    }
+
+    try {
+      return normalizePreAnalysisReportPayload(selectedReport.report_json);
+    } catch {
+      return null;
+    }
+  }, [selectedReport]);
   const selectedReportFailureMessage =
     selectedReport?.status === "failed"
       ? selectedReport.report_markdown || String(selectedReport.input_summary?.error_message ?? "")
@@ -220,12 +230,131 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
           <CardContent>
             {selectedReport && selectedReport.status === "completed" && selectedReportJson ? (
               <div className="space-y-4">
-                <ReportBlock title="Resumo estruturado do caso" content={<p className="text-sm leading-6">{selectedReportJson.resumo_estruturado_do_caso}</p>} />
-                <ReportListBlock title="Pedidos identificados" items={selectedReportJson.pedidos_identificados.map((item) => item.observacao ? `${item.item} - ${item.observacao}` : item.item)} />
-                <ReportListBlock title="Principais inconsistencias documentais" items={selectedReportJson.principais_inconsistencias_documentais.map((item) => `${item.item} [${item.severidade}]${item.fundamento_documental ? ` - ${item.fundamento_documental}` : ""}`)} />
-                <ReportListBlock title="Pontos de atencao para a defesa" items={selectedReportJson.pontos_de_atencao_para_a_defesa.map((item) => `${item.item} [${item.severidade}]`)} />
-                <ReportListBlock title="Documentos recomendados" items={selectedReportJson.documentos_recomendados.map((item) => item.justificativa ? `${item.item} - ${item.justificativa}` : item.item)} />
-                <ReportListBlock title="Riscos preliminares" items={selectedReportJson.riscos_preliminares.map((item) => `${item.item} [${item.severidade}]${item.observacao ? ` - ${item.observacao}` : ""}`)} />
+                <ReportBlock
+                  title={selectedReportJson.cabecalho_relatorio.titulo_relatorio}
+                  content={
+                    <div className="space-y-3">
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        {selectedReportJson.cabecalho_relatorio.subtitulo}
+                      </p>
+                      <div className="rounded-md border border-accent/25 bg-accent/10 px-3 py-2 text-sm">
+                        {selectedReportJson.cabecalho_relatorio.aviso}
+                      </div>
+                    </div>
+                  }
+                />
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <Metric
+                    label="Alerta geral"
+                    value={riskLabel(selectedReportJson.quadro_resumo.nivel_geral_de_alerta)}
+                  />
+                  <Metric label="Achados doc." value={String(countDocumentFindings(selectedReportJson))} />
+                  <Metric
+                    label="Atencoes"
+                    value={String(selectedReportJson.pontos_de_atencao_para_a_defesa.length)}
+                  />
+                  <Metric label="Docs processados" value={String(snapshot?.metrics.processedCount ?? 0)} />
+                </div>
+
+                <ReportBlock
+                  title="Quadro resumo"
+                  content={<p className="text-sm leading-6">{selectedReportJson.quadro_resumo.sintese_final}</p>}
+                />
+
+                <ReportBlock
+                  title="Diagnostico inicial"
+                  content={
+                    <div className="space-y-4">
+                      <p className="text-sm leading-6">{selectedReportJson.diagnostico_inicial.resumo_executivo}</p>
+                      <DualListBlock
+                        leftTitle="Pedidos identificados"
+                        leftItems={selectedReportJson.diagnostico_inicial.pedidos_identificados.map((item) =>
+                          item.observacao ? `${item.pedido} - ${item.observacao}` : item.pedido
+                        )}
+                        rightTitle="Fatos relevantes"
+                        rightItems={selectedReportJson.diagnostico_inicial.fatos_relevantes}
+                      />
+                      <ReportListBlock
+                        title="Lacunas iniciais"
+                        items={selectedReportJson.diagnostico_inicial.lacunas_iniciais}
+                      />
+                    </div>
+                  }
+                />
+
+                <ReportBlock
+                  title="Analise documental do autor"
+                  content={
+                    <div className="space-y-4">
+                      {selectedReportJson.analise_documental_do_autor.map((section) => (
+                        <div key={section.secao} className="rounded-lg border bg-muted/20 p-4">
+                          <div className="mb-3">
+                            <p className="font-semibold">{section.secao}</p>
+                            {section.descricao ? (
+                              <p className="text-sm text-muted-foreground">{section.descricao}</p>
+                            ) : null}
+                          </div>
+                          <div className="space-y-3">
+                            {section.itens.map((item) => (
+                              <div key={`${section.secao}-${item.documento}-${item.achado}`} className="rounded-md border bg-white p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <p className="font-medium">{item.documento}</p>
+                                  <RiskBadge value={item.risco} />
+                                </div>
+                                <p className="mt-2 text-sm font-medium">{item.achado}</p>
+                                <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.observacao}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                />
+
+                <ReportBlock
+                  title="Pontos de atencao para a defesa"
+                  content={
+                    <div className="space-y-3">
+                      {selectedReportJson.pontos_de_atencao_para_a_defesa.map((item) => (
+                        <div key={item.titulo} className="rounded-lg border bg-white p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <p className="font-semibold">{item.titulo}</p>
+                            <PriorityBadge value={item.prioridade} />
+                          </div>
+                          <p className="mt-2 text-sm leading-6">{item.explicacao}</p>
+                          {item.fundamento_documental ? (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">Fundamento documental:</span>{" "}
+                              {item.fundamento_documental}
+                            </p>
+                          ) : null}
+                          {item.impacto_para_defesa ? (
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">Impacto para a defesa:</span>{" "}
+                              {item.impacto_para_defesa}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  }
+                />
+
+                <DualListBlock
+                  leftTitle="Documentos recomendados"
+                  leftItems={selectedReportJson.documentos_recomendados.map(
+                    (item) =>
+                      `[${priorityLabel(item.prioridade)}] ${item.documento} - ${item.justificativa}`
+                  )}
+                  rightTitle="Riscos preliminares"
+                  rightItems={selectedReportJson.riscos_preliminares.map(
+                    (item) =>
+                      `[${riskLabel(item.severidade)}] ${item.titulo} - ${item.observacao}`
+                  )}
+                />
+
                 <ReportListBlock title="Observacoes gerais" items={selectedReportJson.observacoes_gerais} />
                 {selectedReport.report_markdown ? (
                   <div className="rounded-lg border bg-muted/25 p-4">
@@ -234,6 +363,12 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
                   </div>
                 ) : null}
               </div>
+            ) : selectedReport && selectedReport.status === "completed" ? (
+              <EmptyState
+                icon={ShieldAlert}
+                title="Estrutura do laudo indisponivel"
+                description="A versao selecionada nao esta no formato estruturado mais recente. Gere uma nova versao para ver o relatorio completo."
+              />
             ) : selectedReport?.status === "failed" ? (
               <div className="space-y-4">
                 <EmptyState
@@ -269,6 +404,34 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function riskLabel(value: "low" | "medium" | "high") {
+  if (value === "high") return "ALTO";
+  if (value === "medium") return "MEDIO";
+  return "BAIXO";
+}
+
+function priorityLabel(value: "urgent" | "important" | "relevant" | "consider") {
+  if (value === "urgent") return "URGENTE";
+  if (value === "important") return "IMPORTANTE";
+  if (value === "relevant") return "RELEVANTE";
+  return "CONSIDERAR";
+}
+
+function countDocumentFindings(report: PreAnalysisReportOutput) {
+  return report.analise_documental_do_autor.reduce((total, section) => total + section.itens.length, 0);
+}
+
+function RiskBadge({ value }: { value: "low" | "medium" | "high" }) {
+  const variant = value === "high" ? "destructive" : value === "medium" ? "outline" : "success";
+  return <Badge variant={variant}>{riskLabel(value)}</Badge>;
+}
+
+function PriorityBadge({ value }: { value: "urgent" | "important" | "relevant" | "consider" }) {
+  const variant =
+    value === "urgent" ? "destructive" : value === "important" ? "outline" : value === "relevant" ? "secondary" : "secondary";
+  return <Badge variant={variant}>{priorityLabel(value)}</Badge>;
+}
+
 function ReportBlock({ title, content }: { title: string; content: React.ReactNode }) {
   return (
     <div className="rounded-lg border bg-white p-4">
@@ -292,5 +455,24 @@ function ReportListBlock({ title, items }: { title: string; items: string[] }) {
         </ul>
       }
     />
+  );
+}
+
+function DualListBlock({
+  leftTitle,
+  leftItems,
+  rightTitle,
+  rightItems
+}: {
+  leftTitle: string;
+  leftItems: string[];
+  rightTitle: string;
+  rightItems: string[];
+}) {
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <ReportListBlock title={leftTitle} items={leftItems} />
+      <ReportListBlock title={rightTitle} items={rightItems} />
+    </div>
   );
 }

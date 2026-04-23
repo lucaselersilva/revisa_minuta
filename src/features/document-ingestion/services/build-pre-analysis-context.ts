@@ -45,6 +45,16 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
 
   let totalCharacters = 0;
   const documentBlocks: string[] = [];
+  const documentInventory = eligibleDocuments.map((document) => {
+    const ingestion = ingestions.find((item) => item.case_document_id === document.id) ?? null;
+    return [
+      `- Nome: ${document.file_name ?? document.document_type}`,
+      `  Tipo: ${document.document_type}`,
+      `  Mime: ${document.mime_type ?? "nao informado"}`,
+      `  Status da ingestao: ${ingestion?.status ?? "pending"}`,
+      `  Texto extraido: ${ingestion?.extracted_text_length ?? 0} caracteres`
+    ].join("\n");
+  });
 
   for (const item of processedDocuments) {
     if (!item.ingestion?.extracted_text) {
@@ -88,15 +98,23 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
     caseId,
     inputSummary,
     promptContext: [
+      "[Escopo da etapa]",
+      "Trata-se de pre-analise com base em documentos da fase inicial.",
+      "Ainda nao ha revisao final da contestacao nesta etapa, salvo se texto de defesa estiver explicitamente presente no contexto.",
+      "",
       "[Metadados do processo]",
       `Titulo: ${caseItem.title ?? "nao informado"}`,
       `Numero: ${caseItem.case_number ?? "nao informado"}`,
       `Descricao: ${caseItem.description ?? "nao informada"}`,
       `Taxonomia: ${caseItem.taxonomy ? `${caseItem.taxonomy.code} - ${caseItem.taxonomy.name}` : "nao definida"}`,
       `Empresa representada: ${entity?.name ?? "nao vinculada"}`,
+      `Responsavel: ${caseItem.responsible_lawyer?.full_name ?? "nao definido"}`,
       "",
       "[Partes]",
       ...caseItem.parties.map((party) => `- ${party.role}: ${party.name}${party.document ? ` (${party.document})` : ""}`),
+      "",
+      "[Inventario documental da fase inicial]",
+      ...documentInventory,
       "",
       "[Documentos da fase inicial]",
       ...documentBlocks

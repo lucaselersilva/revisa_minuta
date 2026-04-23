@@ -8,3 +8,16 @@ export const inviteSchema = z.object({
 });
 
 export type InviteInput = z.infer<typeof inviteSchema>;
+
+export const acceptInviteSchema = z
+  .object({
+    fullName: z.string().min(3, "Informe o nome completo.").max(120, "Nome muito longo."),
+    password: z.string().min(8, "A senha precisa ter ao menos 8 caracteres."),
+    confirmPassword: z.string().min(8, "Confirme a senha.")
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "As senhas precisam ser iguais.",
+    path: ["confirmPassword"]
+  });
+
+export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;

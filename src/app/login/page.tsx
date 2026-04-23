@@ -55,7 +55,7 @@ export default function LoginPage() {
               <p className="text-xs font-semibold uppercase text-primary">Acesso interno</p>
               <h2 className="mt-2 text-2xl font-semibold tracking-normal">Entrar na plataforma</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Use as credenciais criadas no Supabase Auth. Cadastro publico permanece desabilitado.
+                Use as credenciais criadas no Supabase Auth. Convites novos devem ser ativados pelo link recebido por e-mail.
               </p>
             </div>
             <Suspense fallback={<div className="h-40 animate-pulse rounded-md bg-muted" />}>

@@ -62,7 +62,7 @@ export function UserInviteManager({ profiles, invites }: Props) {
       <Card>
         <CardHeader>
           <CardTitle>Novo convite</CardTitle>
-          <CardDescription>Registra o convite operacional. O envio transacional pode ser conectado depois via Supabase Admin.</CardDescription>
+          <CardDescription>Dispara um convite real pelo Supabase Auth e registra o controle interno do convite no office.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>

@@ -10,6 +10,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/services/audit-log-service";
 import type { Profile } from "@/types/database";
 
+const PRE_ANALYSIS_MAX_TOKENS = 7000;
+
 function extractJsonPayload(text: string) {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
@@ -20,6 +22,46 @@ function extractJsonPayload(text: string) {
   }
 
   return trimmed.slice(start, end + 1);
+}
+
+function tryParseJsonPayload(text: string) {
+  return JSON.parse(extractJsonPayload(text));
+}
+
+async function repairPreAnalysisJson(rawText: string) {
+  const repairResponse = await generateStructuredAnthropicResponse({
+    systemPrompt: [
+      "Voce atua como reparador tecnico de JSON.",
+      "Recebera uma resposta que deveria ser um JSON estrito, mas veio com erro sintatico.",
+      "Sua tarefa e devolver apenas um JSON valido.",
+      "Nao resuma, nao explique, nao adicione markdown e nao altere o conteudo material alem do minimo necessario para corrigir a sintaxe.",
+      "Preserve as mesmas chaves e a mesma estrutura sem inventar informacoes ausentes."
+    ].join(" "),
+    userPrompt: [
+      "Converta o conteudo abaixo em JSON estrito valido.",
+      "Retorne somente o JSON reparado.",
+      rawText
+    ].join("\n\n"),
+    maxTokens: PRE_ANALYSIS_MAX_TOKENS
+  });
+
+  return tryParseJsonPayload(repairResponse.text);
+}
+
+async function parsePreAnalysisResponse(text: string) {
+  try {
+    return tryParseJsonPayload(text);
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+
+    if (!error.message.includes("JSON")) {
+      throw error;
+    }
+
+    return repairPreAnalysisJson(text);
+  }
 }
 
 function formatPreAnalysisFailureMessage(error: unknown) {
@@ -37,7 +79,7 @@ function formatPreAnalysisFailureMessage(error: unknown) {
     return `A Anthropic recusou a geracao do laudo. Detalhe tecnico: ${message}`;
   }
 
-  if (message.includes("JSON valido") || message.includes("ZodError")) {
+  if (message.includes("JSON valido") || message.includes("Expected") || message.includes("ZodError")) {
     return "A resposta da IA nao veio no formato estruturado esperado para o laudo.";
   }
 
@@ -65,10 +107,11 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
   try {
     const response = await generateStructuredAnthropicResponse({
       systemPrompt: buildPreAnalysisSystemPrompt(),
-      userPrompt: buildPreAnalysisUserPrompt(context.promptContext)
+      userPrompt: buildPreAnalysisUserPrompt(context.promptContext),
+      maxTokens: PRE_ANALYSIS_MAX_TOKENS
     });
 
-    const parsedJson = JSON.parse(extractJsonPayload(response.text));
+    const parsedJson = await parsePreAnalysisResponse(response.text);
     const report = normalizePreAnalysisReportPayload(parsedJson);
     const reportMarkdown = renderPreAnalysisMarkdown(report);
 

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { acknowledgePreAnalysisReportAction, generatePreAnalysisReportAction } from "@/features/ai/actions/pre-analysis-actions";
 import { normalizePreAnalysisReportPayload, type PreAnalysisReportOutput } from "@/features/ai/types/pre-analysis-report";
 import { processCaseInitialDocumentsAction } from "@/features/document-ingestion/actions/document-ingestion-actions";
+import { extractStructuredDocumentAnalysis, getDocumentAnalysisStatus } from "@/features/document-ingestion/lib/document-analysis-helpers";
 import { documentTypeLabels } from "@/features/cases/components/document-upload";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -142,22 +143,65 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
             {snapshot?.eligibleDocuments.length ? (
               snapshot.eligibleDocuments.map((item) => (
                 <div key={item.document.id} className="rounded-lg border bg-white p-4">
+                  {(() => {
+                    const documentAnalysis = item.ingestion ? extractStructuredDocumentAnalysis(item.ingestion.metadata) : null;
+                    const analysisStatus = item.ingestion ? getDocumentAnalysisStatus(item.ingestion.metadata) : null;
+
+                    return (
+                      <>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="font-semibold">{item.document.file_name ?? "Documento sem nome"}</p>
                       <p className="text-xs text-muted-foreground">
                         {documentTypeLabels[item.document.document_type]} • {item.document.mime_type ?? "mime desconhecido"}
                       </p>
+                      {item.ingestion?.parser_type ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Parser: {formatParserType(item.ingestion.parser_type)}
+                          {item.ingestion.extracted_text_length ? ` • ${item.ingestion.extracted_text_length} caracteres` : ""}
+                        </p>
+                      ) : null}
                     </div>
                     <Badge variant={statusVariant(item.ingestion?.status ?? "pending")}>
                       {item.ingestion?.status ?? "pending"}
                     </Badge>
                   </div>
+                  {documentAnalysis ? (
+                    <div className="mt-3 rounded-md border bg-muted/25 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">{documentAnalysis.inferred_document_kind}</Badge>
+                        <Badge variant={analysisStatus === "completed" ? "success" : "outline"}>
+                          analise {analysisStatus ?? "nao disponivel"}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          confianca {riskLabel(documentAnalysis.confidence)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-6">{documentAnalysis.summary}</p>
+                      {documentAnalysis.key_findings.length ? (
+                        <ul className="mt-3 space-y-2 text-sm">
+                          {documentAnalysis.key_findings.slice(0, 3).map((finding) => (
+                            <li key={`${finding.title}-${finding.evidence}`} className="rounded-md bg-white px-3 py-2">
+                              <span className="font-medium">{finding.title}</span> [{riskLabel(finding.severity)}] -{" "}
+                              {finding.evidence}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : analysisStatus === "failed" ? (
+                    <p className="mt-3 text-xs text-destructive">
+                      Analise estruturada falhou: {String(item.ingestion?.metadata.analysis_error_message ?? "sem detalhe")}
+                    </p>
+                  ) : null}
                   {item.ingestion?.error_message ? (
                     <p className="mt-3 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm">
                       {item.ingestion.error_message}
                     </p>
                   ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
               ))
             ) : (
@@ -419,6 +463,15 @@ function priorityLabel(value: "urgent" | "important" | "relevant" | "consider") 
 
 function countDocumentFindings(report: PreAnalysisReportOutput) {
   return report.analise_documental_do_autor.reduce((total, section) => total + section.itens.length, 0);
+}
+
+function formatParserType(value: string) {
+  if (value === "pdf_text_based") return "PDF pesquisavel";
+  if (value === "pdf_hybrid") return "PDF hibrido";
+  if (value === "pdf_ocr") return "PDF visual com OCR";
+  if (value === "image_ocr") return "Imagem com OCR";
+  if (value === "txt_plain") return "TXT";
+  return value;
 }
 
 function RiskBadge({ value }: { value: "low" | "medium" | "high" }) {

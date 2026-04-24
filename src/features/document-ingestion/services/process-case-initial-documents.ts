@@ -1,6 +1,7 @@
 import { getCaseById } from "@/features/cases/queries/get-cases";
 import { writeCaseHistory } from "@/features/cases/services/case-history-service";
 import { isPreAnalysisEligibleDocumentType } from "@/features/document-ingestion/lib/eligible-documents";
+import { analyzeProcessedDocument } from "@/features/document-ingestion/services/analyze-processed-document";
 import { parseDocumentByMimeType } from "@/features/document-ingestion/services/parser-dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Profile } from "@/types/database";
@@ -69,6 +70,31 @@ export async function processCaseInitialDocuments(caseId: string, profile: Profi
 
     const buffer = Buffer.from(await downloadResult.data.arrayBuffer());
     const parsed = await parseDocumentByMimeType({ mimeType: document.mime_type, buffer });
+    let analysisMetadata: Record<string, unknown> = {};
+
+    if (parsed.status === "processed" && parsed.extractedText) {
+      const analysis = await analyzeProcessedDocument({
+        document,
+        extractedText: parsed.extractedText,
+        fileBuffer: buffer,
+        parserType: parsed.parserType,
+        parserMetadata: parsed.metadata
+      });
+
+      analysisMetadata =
+        analysis.status === "completed"
+          ? {
+              analysis_status: "completed",
+              analysis_model_name: analysis.modelName,
+              analysis_prompt_version: analysis.promptVersion,
+              document_analysis: analysis.report
+            }
+          : {
+              analysis_status: analysis.status,
+              analysis_prompt_version: analysis.promptVersion,
+              analysis_error_message: analysis.errorMessage
+            };
+    }
 
     await supabase.from("AA_document_ingestions").upsert(
       {
@@ -82,6 +108,7 @@ export async function processCaseInitialDocuments(caseId: string, profile: Profi
         error_message: parsed.errorMessage,
         metadata: {
           ...parsed.metadata,
+          ...analysisMetadata,
           file_name: document.file_name,
           mime_type: document.mime_type
         },
@@ -101,12 +128,13 @@ export async function processCaseInitialDocuments(caseId: string, profile: Profi
               ? "pre_analysis.document.empty_text"
               : "pre_analysis.document.failed",
       profile,
-      metadata: {
-        document_id: document.id,
-        file_name: document.file_name,
-        status: parsed.status
-      }
-    });
+        metadata: {
+          document_id: document.id,
+          file_name: document.file_name,
+          status: parsed.status,
+          analysis_status: analysisMetadata.analysis_status ?? null
+        }
+      });
   }
 
   return { ok: true, message: "Processamento documental concluido." };

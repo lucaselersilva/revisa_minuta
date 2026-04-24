@@ -1,3 +1,4 @@
+import { parseImageOcr } from "@/features/document-ingestion/parsers/parse-image-ocr";
 import { parsePdfTextBased } from "@/features/document-ingestion/parsers/parse-pdf-text-based";
 import { parseTxt } from "@/features/document-ingestion/parsers/parse-txt";
 import type { ParserResult } from "@/features/document-ingestion/types";
@@ -15,6 +16,10 @@ export async function parseDocumentByMimeType({
 
   if (mimeType === "text/plain") {
     return parseTxt(buffer);
+  }
+
+  if (mimeType === "image/jpeg" || mimeType === "image/png") {
+    return parseImageOcr({ buffer, mimeType });
   }
 
   if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {

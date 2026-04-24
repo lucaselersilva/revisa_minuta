@@ -1,3 +1,4 @@
+import { extractStructuredDocumentAnalysis } from "@/features/document-ingestion/lib/document-analysis-helpers";
 import { getCaseById } from "@/features/cases/queries/get-cases";
 import { isPreAnalysisEligibleDocumentType } from "@/features/document-ingestion/lib/eligible-documents";
 import type { PreAnalysisContext } from "@/features/document-ingestion/types";
@@ -47,14 +48,45 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
   const documentBlocks: string[] = [];
   const documentInventory = eligibleDocuments.map((document) => {
     const ingestion = ingestions.find((item) => item.case_document_id === document.id) ?? null;
+    const documentAnalysis = ingestion ? extractStructuredDocumentAnalysis(ingestion.metadata) : null;
     return [
       `- Nome: ${document.file_name ?? document.document_type}`,
       `  Tipo: ${document.document_type}`,
       `  Mime: ${document.mime_type ?? "nao informado"}`,
       `  Status da ingestao: ${ingestion?.status ?? "pending"}`,
-      `  Texto extraido: ${ingestion?.extracted_text_length ?? 0} caracteres`
+      `  Parser aplicado: ${ingestion?.parser_type ?? "nao processado"}`,
+      `  Texto extraido: ${ingestion?.extracted_text_length ?? 0} caracteres`,
+      `  Analise estruturada: ${documentAnalysis ? documentAnalysis.inferred_document_kind : "nao disponivel"}`
     ].join("\n");
   });
+  const documentAnalysisBlocks = processedDocuments
+    .map((item) => {
+      if (!item.ingestion) {
+        return null;
+      }
+
+      const documentAnalysis = extractStructuredDocumentAnalysis(item.ingestion.metadata);
+      if (!documentAnalysis) {
+        return null;
+      }
+
+      return [
+        `Documento: ${item.document.file_name ?? item.document.document_type}`,
+        `Tipo inferido: ${documentAnalysis.inferred_document_kind}`,
+        `Resumo: ${documentAnalysis.summary}`,
+        `Participantes: ${documentAnalysis.participants.join(", ") || "nao identificados"}`,
+        `Datas: ${documentAnalysis.dates.join(", ") || "nao identificadas"}`,
+        `Valores: ${documentAnalysis.monetary_values.join(", ") || "nao identificados"}`,
+        "Achados relevantes:",
+        ...documentAnalysis.key_findings.map(
+          (finding) => `- ${finding.title} [${finding.severity}] (${finding.category}) - ${finding.evidence}`
+        ),
+        "Implicacoes para a defesa:",
+        ...documentAnalysis.defensive_implications.map((itemText) => `- ${itemText}`),
+        `Confianca geral: ${documentAnalysis.confidence}`
+      ].join("\n");
+    })
+    .filter((item): item is string => Boolean(item));
 
   for (const item of processedDocuments) {
     if (!item.ingestion?.extracted_text) {
@@ -89,6 +121,7 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
     represented_entity: entity?.name ?? null,
     eligible_documents: eligibleDocuments.length,
     processed_documents: processedDocuments.length,
+    analyzed_documents: documentAnalysisBlocks.length,
     unsupported_documents: ingestions.filter((item) => item.status === "unsupported").length,
     empty_text_documents: ingestions.filter((item) => item.status === "empty_text").length,
     total_characters: totalCharacters
@@ -115,6 +148,9 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
       "",
       "[Inventario documental da fase inicial]",
       ...documentInventory,
+      "",
+      "[Analise documental estruturada]",
+      ...(documentAnalysisBlocks.length > 0 ? documentAnalysisBlocks : ["Nenhuma analise estruturada disponivel."]),
       "",
       "[Documentos da fase inicial]",
       ...documentBlocks

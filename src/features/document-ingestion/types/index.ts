@@ -6,6 +6,37 @@ import type {
   Profile
 } from "@/types/database";
 
+export type DocumentAnalysisKind =
+  | "email_print"
+  | "whatsapp_print"
+  | "financial_record"
+  | "platform_print"
+  | "identity_document"
+  | "procuration"
+  | "travel_record"
+  | "general_attachment";
+
+export type DocumentAnalysisSeverity = "low" | "medium" | "high";
+export type DocumentAnalysisConfidence = "low" | "medium" | "high";
+
+export type DocumentAnalysisFinding = {
+  title: string;
+  category: string;
+  severity: DocumentAnalysisSeverity;
+  evidence: string;
+};
+
+export type StructuredDocumentAnalysis = {
+  inferred_document_kind: DocumentAnalysisKind;
+  summary: string;
+  participants: string[];
+  dates: string[];
+  monetary_values: string[];
+  key_findings: DocumentAnalysisFinding[];
+  defensive_implications: string[];
+  confidence: DocumentAnalysisConfidence;
+};
+
 export type ParserResult = {
   status: DocumentIngestion["status"];
   parserType: string | null;

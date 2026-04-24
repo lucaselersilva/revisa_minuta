@@ -16,6 +16,20 @@ type AnthropicApiError = Error & {
   modelName?: string;
 };
 
+export type AnthropicContentBlock =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "image";
+      source: {
+        type: "base64";
+        media_type: string;
+        data: string;
+      };
+    };
+
 function resolveConfiguredModelName() {
   const configured = process.env.ANTHROPIC_MODEL_NAME?.trim();
 
@@ -30,12 +44,14 @@ async function requestAnthropic({
   apiKey,
   modelName,
   systemPrompt,
-  userPrompt
+  userContent,
+  maxTokens = 4000
 }: {
   apiKey: string;
   modelName: string;
   systemPrompt: string;
-  userPrompt: string;
+  userContent: string | AnthropicContentBlock[];
+  maxTokens?: number;
 }) {
   const response = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
@@ -46,13 +62,13 @@ async function requestAnthropic({
     },
     body: JSON.stringify({
       model: modelName,
-      max_tokens: 4000,
+      max_tokens: maxTokens,
       temperature: 0.2,
       system: systemPrompt,
       messages: [
         {
           role: "user",
-          content: userPrompt
+          content: userContent
         }
       ]
     })
@@ -101,10 +117,28 @@ function shouldRetryWithFallback(error: unknown) {
 
 export async function generateStructuredAnthropicResponse({
   systemPrompt,
-  userPrompt
+  userPrompt,
+  maxTokens
 }: {
   systemPrompt: string;
   userPrompt: string;
+  maxTokens?: number;
+}) {
+  return generateAnthropicResponse({
+    systemPrompt,
+    userContent: userPrompt,
+    maxTokens
+  });
+}
+
+export async function generateAnthropicResponse({
+  systemPrompt,
+  userContent,
+  maxTokens
+}: {
+  systemPrompt: string;
+  userContent: string | AnthropicContentBlock[];
+  maxTokens?: number;
 }) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
@@ -119,7 +153,8 @@ export async function generateStructuredAnthropicResponse({
       apiKey,
       modelName: preferredModel,
       systemPrompt,
-      userPrompt
+      userContent,
+      maxTokens
     });
   } catch (error) {
     if (!shouldRetryWithFallback(error) || preferredModel === FALLBACK_MODEL) {
@@ -130,7 +165,8 @@ export async function generateStructuredAnthropicResponse({
       apiKey,
       modelName: FALLBACK_MODEL,
       systemPrompt,
-      userPrompt
+      userContent,
+      maxTokens
     });
   }
 }

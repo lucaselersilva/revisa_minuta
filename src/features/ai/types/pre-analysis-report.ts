@@ -1,75 +1,182 @@
 import { z } from "zod";
 
-export const preAnalysisRiskSchema = z.enum(["low", "medium", "high"]);
-export const preAnalysisPrioritySchema = z.enum(["urgent", "important", "relevant", "consider"]);
-
-const preAnalysisHeaderSchema = z.object({
-  titulo_relatorio: z.string().min(5),
-  subtitulo: z.string().min(5),
-  aviso: z.string().min(10)
+const yesPartialNoSchema = z.enum(["sim", "parcialmente", "nao", "inconclusivo"]);
+const confrontoSchema = z.object({
+  o_que_autor_narra: z.array(z.string()),
+  o_que_documentos_provam: z.array(z.string()),
+  o_que_documentos_nao_provam: z.array(z.string()),
+  o_que_pode_ser_explorado_pela_defesa: z.array(z.string())
 });
 
-const preAnalysisDiagnosticSchema = z.object({
-  resumo_executivo: z.string().min(10),
-  pedidos_identificados: z.array(
+const narrativaConclusaoSchema = z.object({
+  conclusao: yesPartialNoSchema,
+  justificativa: z.string(),
+  pontos_fortes: z.array(z.string()),
+  lacunas: z.array(z.string())
+});
+
+const pedidosConclusaoSchema = z.object({
+  conclusao: yesPartialNoSchema,
+  justificativa: z.string(),
+  pedidos_sustentados: z.array(z.string()),
+  pedidos_nao_sustentados_ou_fracos: z.array(z.string())
+});
+
+const individualizacaoSchema = z.object({
+  nome_autor: z.string(),
+  documentos_vinculados: z.array(z.string()),
+  pedidos_vinculados: z.array(z.string()),
+  danos_individualizados: z.array(z.string()),
+  lacunas_individualizacao: z.array(z.string()),
+  observacoes: z.string()
+});
+
+const cronologiaEventoSchema = z.object({
+  data: z.string().nullable(),
+  evento: z.string(),
+  fonte_documental: z.string().nullable(),
+  observacao: z.string()
+});
+
+const tipoPesoSchema = z.enum(["forte", "medio", "fraco", "inconclusivo", "contraditorio"]);
+
+const preAnalysisReportSchemaInternal = z.object({
+  resumo_executivo: z.string(),
+  matriz_final_confronto: confrontoSchema,
+  analise_narrativa_vs_documentos: z.object({
+    documentos_embasam_narrativa: narrativaConclusaoSchema,
+    documentos_embasam_pedidos: pedidosConclusaoSchema
+  }),
+  analise_individualizada_por_autor: z.array(individualizacaoSchema),
+  cadeia_negocial: z.object({
+    quem_comprou: z.string().nullable(),
+    quem_pagou: z.string().nullable(),
+    quem_viajou_ou_seria_beneficiario: z.string().nullable(),
+    quem_reclamou_ou_solicitou_suporte: z.string().nullable(),
+    quem_recebeu_ou_deveria_receber_estorno: z.string().nullable(),
+    divergencias_entre_pessoas: z.array(z.string())
+  }),
+  cronologia: z.object({
+    eventos_identificados: z.array(cronologiaEventoSchema),
+    inconsistencias_temporais: z.array(z.string()),
+    eventos_sem_prova_temporal: z.array(z.string())
+  }),
+  coerencia_entre_documentos: z.object({
+    nomes_divergentes: z.array(z.string()),
+    datas_divergentes: z.array(z.string()),
+    valores_divergentes: z.array(z.string()),
+    codigos_localizadores_divergentes: z.array(z.string()),
+    emails_telefones_ou_identificadores_divergentes: z.array(z.string()),
+    observacoes: z.string()
+  }),
+  analise_por_tipo_documental: z.object({
+    procuracao: z.object({
+      existe: z.boolean(),
+      regularidade_formal: z.string(),
+      assinatura_compatibilidade: z.enum(["compativel", "incompativel", "indicio_de_inconsistencia", "nao_verificavel"]),
+      pontos_de_atencao: z.array(z.string())
+    }),
+    documento_identidade: z.object({
+      existe: z.boolean(),
+      compatibilidade_com_parte: z.string(),
+      sinais_de_edicao_ou_layout_incompativel: z.array(z.string()),
+      pontos_de_atencao: z.array(z.string())
+    }),
+    comprovante_endereco: z.object({
+      existe: z.boolean(),
+      aderencia_ao_nome_da_parte: z.string(),
+      aderencia_ao_endereco_da_inicial: z.string(),
+      sinais_de_edicao_ou_layout_incompativel: z.array(z.string()),
+      pontos_de_atencao: z.array(z.string())
+    }),
+    comprovantes_pagamento: z.object({
+      existem: z.boolean(),
+      aderencia_ao_nome_da_parte: z.string(),
+      datas_valores_identificados: z.array(z.string()),
+      sinais_de_edicao_ou_layout_incompativel: z.array(z.string()),
+      pontos_de_atencao: z.array(z.string())
+    }),
+    prints_tela: z.object({
+      existem: z.boolean(),
+      compatibilidade_com_plataforma_alegada: z.string(),
+      ["qualidade_probat\u00f3ria"]: z.enum(["forte", "media", "fraca", "inconclusiva"]),
+      sinais_de_edicao_ou_recorte: z.array(z.string()),
+      pontos_de_atencao: z.array(z.string())
+    }),
+    outros_documentos: z.array(
+      z.object({
+        tipo_ou_descricao: z.string(),
+        peso_probatorio: tipoPesoSchema,
+        observacoes: z.string()
+      })
+    )
+  }),
+  suficiencia_probatoria: z.object({
+    conclusao: z.enum(["suficiente", "parcial", "insuficiente", "inconclusiva"]),
+    provas_fortes: z.array(z.string()),
+    provas_fracas_ou_unilaterais: z.array(z.string()),
+    documentos_chave_ausentes: z.array(z.string()),
+    observacoes: z.string()
+  }),
+  pedido_indenizatorio: z.object({
+    dano_material_tem_prova_minima: yesPartialNoSchema,
+    valor_pedido_tem_suporte_documental: yesPartialNoSchema,
+    dano_moral_tem_base_fatica_individualizada: yesPartialNoSchema,
+    despesas_extraordinarias_comprovadas: z.array(z.string()),
+    lacunas: z.array(z.string())
+  }),
+  compatibilidade_canal_documento: z.object({
+    alegacoes_vs_canais_comprovados: z.array(z.string()),
+    prova_de_contratacao: z.array(z.string()),
+    prova_de_tentativa: z.array(z.string()),
+    prova_de_oferta_ou_pre_reserva: z.array(z.string()),
+    mera_consulta_ou_print_inconclusivo: z.array(z.string())
+  }),
+  integridade_tecnica_arquivos: z.object({
+    sinais_possiveis_de_manipulacao: z.array(z.string()),
+    limitacoes_da_analise: z.array(z.string()),
+    necessita_validacao_humana: z.boolean()
+  }),
+  representacao_processual: z.object({
+    regularidade_aparente: z.enum(["regular", "parcial", "irregular", "inconclusiva"]),
+    pontos_de_atencao: z.array(z.string()),
+    autores_sem_procuracao_ou_documento: z.array(z.string())
+  }),
+  espacialidade: z.object({
+    cidades_enderecos_identificados: z.array(z.string()),
+    inconsistencias_territoriais: z.array(z.string()),
+    observacoes: z.string()
+  }),
+  indicios_litigancia_padronizada: z.object({
+    indicios: z.array(z.string()),
+    elementos_recorrentes: z.array(z.string()),
+    observacoes: z.string()
+  }),
+  pontos_exploraveis_defesa: z.array(
     z.object({
-      pedido: z.string().min(2),
-      observacao: z.string().optional()
+      ponto: z.string(),
+      categoria: z.enum([
+        "legitimidade",
+        "autenticidade",
+        "dano_material",
+        "dano_moral",
+        "nexo_causal",
+        "representacao",
+        "prova_insuficiente",
+        "cronologia",
+        "outro"
+      ]),
+      relevancia: z.enum(["baixa", "media", "alta", "critica"]),
+      explorabilidade: z.enum(["baixa", "media", "alta"]),
+      necessita_validacao_humana: z.boolean(),
+      justificativa: z.string()
     })
   ),
-  fatos_relevantes: z.array(z.string().min(2)),
-  lacunas_iniciais: z.array(z.string().min(2))
+  documentos_internos_recomendados_para_defesa: z.array(z.string()),
+  alertas_de_nao_conclusao: z.array(z.string())
 });
 
-const preAnalysisDocumentFindingSchema = z.object({
-  documento: z.string().min(2),
-  achado: z.string().min(2),
-  risco: preAnalysisRiskSchema,
-  observacao: z.string().min(2)
-});
-
-const preAnalysisDocumentSectionSchema = z.object({
-  secao: z.string().min(2),
-  descricao: z.string().optional(),
-  itens: z.array(preAnalysisDocumentFindingSchema)
-});
-
-const preAnalysisDefenseAttentionSchema = z.object({
-  titulo: z.string().min(2),
-  prioridade: preAnalysisPrioritySchema,
-  explicacao: z.string().min(2),
-  fundamento_documental: z.string().optional(),
-  impacto_para_defesa: z.string().optional()
-});
-
-const preAnalysisRecommendedDocumentSchema = z.object({
-  documento: z.string().min(2),
-  prioridade: preAnalysisPrioritySchema,
-  justificativa: z.string().min(2)
-});
-
-const preAnalysisRiskItemSchema = z.object({
-  titulo: z.string().min(2),
-  severidade: preAnalysisRiskSchema,
-  observacao: z.string().min(2)
-});
-
-const preAnalysisSummarySchema = z.object({
-  nivel_geral_de_alerta: preAnalysisRiskSchema,
-  sintese_final: z.string().min(10)
-});
-
-export const preAnalysisReportSchema = z.object({
-  cabecalho_relatorio: preAnalysisHeaderSchema,
-  quadro_resumo: preAnalysisSummarySchema,
-  diagnostico_inicial: preAnalysisDiagnosticSchema,
-  analise_documental_do_autor: z.array(preAnalysisDocumentSectionSchema),
-  pontos_de_atencao_para_a_defesa: z.array(preAnalysisDefenseAttentionSchema),
-  documentos_recomendados: z.array(preAnalysisRecommendedDocumentSchema),
-  riscos_preliminares: z.array(preAnalysisRiskItemSchema),
-  observacoes_gerais: z.array(z.string().min(2))
-});
-
+export const preAnalysisReportSchema = preAnalysisReportSchemaInternal;
 export type PreAnalysisReportOutput = z.infer<typeof preAnalysisReportSchema>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,6 +189,11 @@ function cleanText(value: unknown) {
   }
 
   return value.replace(/\s+/g, " ").trim();
+}
+
+function cleanNullableText(value: unknown): string | null {
+  const text = cleanText(value);
+  return text || null;
 }
 
 function pickFirstText(record: Record<string, unknown>, keys: string[]) {
@@ -104,12 +216,23 @@ function toStringArray(value: unknown) {
         }
 
         if (isRecord(item)) {
-          return pickFirstText(item, ["item", "texto", "descricao", "descricao_curta", "observacao"]);
+          return pickFirstText(item, [
+            "item",
+            "texto",
+            "descricao",
+            "descricao_curta",
+            "observacao",
+            "titulo",
+            "evento",
+            "documento",
+            "pedido",
+            "ponto"
+          ]);
         }
 
         return "";
       })
-      .filter((item) => item.length >= 2);
+      .filter(Boolean);
   }
 
   if (isRecord(value)) {
@@ -118,7 +241,7 @@ function toStringArray(value: unknown) {
       return toStringArray(nestedArray);
     }
 
-    const single = pickFirstText(value, ["item", "texto", "descricao", "observacao"]);
+    const single = pickFirstText(value, ["item", "texto", "descricao", "observacao", "titulo"]);
     return single ? [single] : [];
   }
 
@@ -126,230 +249,313 @@ function toStringArray(value: unknown) {
   return single ? [single] : [];
 }
 
-function normalizeRisk(value: unknown): "low" | "medium" | "high" {
+function toBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized = cleanText(value).toLowerCase();
+  return ["sim", "true", "1", "yes", "existe", "existem", "presente"].includes(normalized);
+}
+
+function normalizeYesPartialNo(value: unknown): z.infer<typeof yesPartialNoSchema> {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["high", "alta", "alto", "grave", "critico", "critica", "urgente"].includes(normalized)) {
-    return "high";
+  if (["sim", "yes", "sustentado", "sustentada", "comprovado", "comprovada"].includes(normalized)) {
+    return "sim";
   }
 
-  if (["medium", "media", "medio", "moderado", "moderada", "importante", "relevante"].includes(normalized)) {
-    return "medium";
+  if (["parcialmente", "parcial", "em parte"].includes(normalized)) {
+    return "parcialmente";
   }
 
-  return "low";
+  if (["nao", "não", "no", "ausente", "fraco", "insuficiente"].includes(normalized)) {
+    return "nao";
+  }
+
+  return "inconclusivo";
 }
 
-function normalizePriority(value: unknown): "urgent" | "important" | "relevant" | "consider" {
+function normalizeQualidadePrint(value: unknown): "forte" | "media" | "fraca" | "inconclusiva" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["urgent", "urgente", "critico", "critica"].includes(normalized)) {
-    return "urgent";
+  if (["forte", "alta", "alto"].includes(normalized)) {
+    return "forte";
   }
 
-  if (["important", "importante", "alto"].includes(normalized)) {
-    return "important";
+  if (["media", "medio", "médio", "regular"].includes(normalized)) {
+    return "media";
   }
 
-  if (["relevant", "relevante", "medio", "media", "moderado", "moderada"].includes(normalized)) {
-    return "relevant";
+  if (["fraca", "fraco", "baixa", "baixo"].includes(normalized)) {
+    return "fraca";
   }
 
-  return "consider";
+  return "inconclusiva";
 }
 
-function toPedidoArray(value: unknown) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (typeof item === "string") {
-          const pedido = cleanText(item);
-          return pedido ? { pedido } : null;
-        }
+function normalizePesoProbatorio(value: unknown): z.infer<typeof tipoPesoSchema> {
+  const normalized = cleanText(value).toLowerCase();
 
-        if (!isRecord(item)) {
-          return null;
-        }
-
-        const pedido = pickFirstText(item, ["pedido", "item", "titulo", "texto", "descricao"]);
-        const observacao = pickFirstText(item, ["observacao", "detalhe", "detalhes"]);
-        return pedido ? { pedido, observacao: observacao || undefined } : null;
-      })
-      .filter((item): item is { pedido: string; observacao?: string } => Boolean(item));
-  }
-
-  if (isRecord(value)) {
-    const nestedArray = Object.values(value).find(Array.isArray);
-    if (nestedArray) {
-      return toPedidoArray(nestedArray);
-    }
-
-    const pedido = pickFirstText(value, ["pedido", "item", "titulo", "texto", "descricao"]);
-    const observacao = pickFirstText(value, ["observacao", "detalhe", "detalhes"]);
-    return pedido ? [{ pedido, observacao: observacao || undefined }] : [];
-  }
-
-  const pedido = cleanText(value);
-  return pedido ? [{ pedido }] : [];
+  if (["forte", "alta", "alto"].includes(normalized)) return "forte";
+  if (["medio", "médio", "media", "média", "regular"].includes(normalized)) return "medio";
+  if (["fraco", "fraca", "baixo", "baixa"].includes(normalized)) return "fraco";
+  if (["contraditorio", "contraditório", "contraditoria", "contraditoria"].includes(normalized)) return "contraditorio";
+  return "inconclusivo";
 }
 
-function toDocumentFindingArray(value: unknown) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (typeof item === "string") {
-          const achado = cleanText(item);
-          return achado
-            ? {
-                documento: "Documento nao especificado",
-                achado,
-                risco: "medium" as const,
-                observacao: achado
-              }
-            : null;
-        }
+function normalizeAssinaturaCompatibilidade(
+  value: unknown
+): "compativel" | "incompativel" | "indicio_de_inconsistencia" | "nao_verificavel" {
+  const normalized = cleanText(value).toLowerCase();
 
-        if (!isRecord(item)) {
-          return null;
-        }
-
-        const documento = pickFirstText(item, ["documento", "arquivo", "fonte", "evidencia"]);
-        const achado = pickFirstText(item, ["achado", "item", "titulo", "texto", "descricao"]);
-        const observacao = pickFirstText(item, [
-          "observacao",
-          "fundamento_documental",
-          "fundamento",
-          "detalhe",
-          "detalhes",
-          "justificativa"
-        ]);
-
-        const resolvedAchado = achado || observacao;
-        if (!resolvedAchado) {
-          return null;
-        }
-
-        return {
-          documento: documento || "Documento nao especificado",
-          achado: resolvedAchado,
-          risco: normalizeRisk(item.risco ?? item.severidade ?? item.severity),
-          observacao: observacao || resolvedAchado
-        };
-      })
-      .filter(
-        (
-          item
-        ): item is {
-          documento: string;
-          achado: string;
-          risco: "low" | "medium" | "high";
-          observacao: string;
-        } => Boolean(item)
-      );
-  }
-
-  if (isRecord(value)) {
-    const nestedArray = Object.values(value).find(Array.isArray);
-    if (nestedArray) {
-      return toDocumentFindingArray(nestedArray);
-    }
-
-    return toDocumentFindingArray([value]);
-  }
-
-  const achado = cleanText(value);
-  return achado
-    ? [
-        {
-          documento: "Documento nao especificado",
-          achado,
-          risco: "medium",
-          observacao: achado
-        }
-      ]
-    : [];
+  if (["compativel", "compatível"].includes(normalized)) return "compativel";
+  if (["incompativel", "incompatível"].includes(normalized)) return "incompativel";
+  if (normalized.includes("indicio") || normalized.includes("inconsist")) return "indicio_de_inconsistencia";
+  return "nao_verificavel";
 }
 
-function toDocumentSectionArray(value: unknown, source: Record<string, unknown>) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (!isRecord(item)) {
-          const findings = toDocumentFindingArray(item);
-          return findings.length
-            ? {
-                secao: "Achados documentais",
-                itens: findings
-              }
-            : null;
-        }
+function normalizeSuficiencia(value: unknown): "suficiente" | "parcial" | "insuficiente" | "inconclusiva" {
+  const normalized = cleanText(value).toLowerCase();
 
-        const secao = pickFirstText(item, ["secao", "titulo", "nome", "categoria"]);
-        const descricao = pickFirstText(item, ["descricao", "subtitulo", "observacao"]);
-        const itens = toDocumentFindingArray(item.itens ?? item.achados ?? item.documentos ?? item.lista);
+  if (["suficiente", "adequada", "adequado"].includes(normalized)) return "suficiente";
+  if (["parcial", "parcialmente"].includes(normalized)) return "parcial";
+  if (["insuficiente", "fraca", "fraco"].includes(normalized)) return "insuficiente";
+  return "inconclusiva";
+}
 
-        if (!itens.length) {
-          return null;
-        }
+function normalizeRegularidade(value: unknown): "regular" | "parcial" | "irregular" | "inconclusiva" {
+  const normalized = cleanText(value).toLowerCase();
 
-        return {
-          secao: secao || "Achados documentais",
-          descricao: descricao || undefined,
-          itens
-        };
-      })
-      .filter(
-        (
-          item
-        ): item is {
-          secao: string;
-          descricao?: string;
-          itens: Array<{
-            documento: string;
-            achado: string;
-            risco: "low" | "medium" | "high";
-            observacao: string;
-          }>;
-        } => Boolean(item)
-      );
-  }
+  if (["regular", "ok"].includes(normalized)) return "regular";
+  if (["parcial", "parcialmente"].includes(normalized)) return "parcial";
+  if (["irregular"].includes(normalized)) return "irregular";
+  return "inconclusiva";
+}
 
-  if (isRecord(value)) {
-    const nestedArray = Object.values(value).find(Array.isArray);
-    if (nestedArray) {
-      return toDocumentSectionArray(nestedArray, source);
-    }
-  }
+function normalizeCategoria(
+  value: unknown
+): "legitimidade" | "autenticidade" | "dano_material" | "dano_moral" | "nexo_causal" | "representacao" | "prova_insuficiente" | "cronologia" | "outro" {
+  const normalized = cleanText(value).toLowerCase();
 
-  const legacyFindings = toDocumentFindingArray(
-    source.principais_inconsistencias_documentais ?? source.achados_documentais ?? source.inconsistencias_documentais
+  if (normalized.includes("legitim")) return "legitimidade";
+  if (normalized.includes("autentic")) return "autenticidade";
+  if (normalized.includes("material")) return "dano_material";
+  if (normalized.includes("moral")) return "dano_moral";
+  if (normalized.includes("nexo")) return "nexo_causal";
+  if (normalized.includes("represent")) return "representacao";
+  if (normalized.includes("cronolog") || normalized.includes("tempo")) return "cronologia";
+  if (normalized.includes("prova") || normalized.includes("insuf")) return "prova_insuficiente";
+  return "outro";
+}
+
+function normalizeRelevancia(value: unknown): "baixa" | "media" | "alta" | "critica" {
+  const normalized = cleanText(value).toLowerCase();
+
+  if (["critica", "crítica", "critico", "crítico"].includes(normalized)) return "critica";
+  if (["alta", "alto"].includes(normalized)) return "alta";
+  if (["media", "média", "medio", "médio", "moderada", "moderado"].includes(normalized)) return "media";
+  return "baixa";
+}
+
+function normalizeExplorabilidade(value: unknown): "baixa" | "media" | "alta" {
+  const normalized = cleanText(value).toLowerCase();
+
+  if (["alta", "alto"].includes(normalized)) return "alta";
+  if (["media", "média", "medio", "médio", "moderada", "moderado"].includes(normalized)) return "media";
+  return "baixa";
+}
+
+function prudentialText(text: unknown, fallback = "Nao foi possivel verificar com os documentos disponiveis.") {
+  const cleaned = cleanText(text);
+  return cleaned || fallback;
+}
+
+function buildLegacySummary(source: Record<string, unknown>) {
+  const diagnostico = isRecord(source.diagnostico_inicial) ? source.diagnostico_inicial : {};
+  const quadro = isRecord(source.quadro_resumo) ? source.quadro_resumo : {};
+
+  return (
+    pickFirstText(source, ["resumo_executivo"]) ||
+    pickFirstText(diagnostico, ["resumo_executivo", "resumo", "texto", "descricao"]) ||
+    pickFirstText(quadro, ["sintese_final", "resumo_final", "conclusao"]) ||
+    "Laudo pre-analitico convertido para a estrutura atual com base no conteudo persistido."
   );
-
-  return legacyFindings.length
-    ? [
-        {
-          secao: "Achados documentais prioritarios",
-          descricao: "Leitura inicial dos documentos juntados pelo autor.",
-          itens: legacyFindings
-        }
-      ]
-    : [];
 }
 
-function toAttentionArray(value: unknown, source: Record<string, unknown>) {
-  const rawValue =
-    value ?? source.pontos_de_atencao_para_a_defesa ?? source.achados_prioritarios ?? source.recomendacoes_prioritarias;
+function buildLegacyFindings(source: Record<string, unknown>) {
+  return toStringArray(
+    source.analise_documental_do_autor ??
+      source.principais_inconsistencias_documentais ??
+      source.achados_documentais ??
+      source.inconsistencias_documentais
+  );
+}
 
-  if (Array.isArray(rawValue)) {
-    return rawValue
+function buildLegacyAttention(source: Record<string, unknown>) {
+  return toStringArray(
+    source.pontos_de_atencao_para_a_defesa ?? source.achados_prioritarios ?? source.recomendacoes_prioritarias
+  );
+}
+
+function buildLegacyRecommendedDocuments(source: Record<string, unknown>) {
+  return toStringArray(source.documentos_recomendados);
+}
+
+function normalizeIndividualAuthors(value: unknown, source: Record<string, unknown>) {
+  if (Array.isArray(value) && value.length) {
+    return value
+      .map((item) => {
+        if (!isRecord(item)) {
+          const text = cleanText(item);
+          return text
+            ? {
+                nome_autor: text,
+                documentos_vinculados: [],
+                pedidos_vinculados: [],
+                danos_individualizados: [],
+                lacunas_individualizacao: [],
+                observacoes: "Registro convertido para a estrutura atual."
+              }
+            : null;
+        }
+
+        const nome = pickFirstText(item, ["nome_autor", "autor", "nome", "parte"]);
+        return {
+          nome_autor: nome || "Autor nao identificado",
+          documentos_vinculados: toStringArray(item.documentos_vinculados ?? item.documentos ?? item.vinculos_documentais),
+          pedidos_vinculados: toStringArray(item.pedidos_vinculados ?? item.pedidos),
+          danos_individualizados: toStringArray(item.danos_individualizados ?? item.danos),
+          lacunas_individualizacao: toStringArray(item.lacunas_individualizacao ?? item.lacunas),
+          observacoes: prudentialText(
+            pickFirstText(item, ["observacoes", "observacao", "nota"]),
+            "Nao foi possivel verificar com os documentos disponiveis a individualizacao completa."
+          )
+        };
+      })
+      .filter(Boolean) as PreAnalysisReportOutput["analise_individualizada_por_autor"];
+  }
+
+  const parties = Array.isArray(source.partes) ? source.partes : [];
+  return parties
+    .map((item) => {
+      if (!isRecord(item)) return null;
+      const role = cleanText(item.role ?? item.tipo ?? item.papel).toLowerCase();
+      if (!role.includes("author") && !role.includes("autor")) return null;
+      const name = pickFirstText(item, ["name", "nome", "parte"]);
+      return {
+        nome_autor: name || "Autor nao identificado",
+        documentos_vinculados: [],
+        pedidos_vinculados: [],
+        danos_individualizados: [],
+        lacunas_individualizacao: ["Nao foi possivel verificar com os documentos disponiveis a individualizacao completa."],
+        observacoes: "Entrada gerada a partir dos metadados de partes."
+      };
+    })
+    .filter(Boolean) as PreAnalysisReportOutput["analise_individualizada_por_autor"];
+}
+
+function normalizeCronologia(value: unknown, source: Record<string, unknown>) {
+  const raw = isRecord(value) ? value : {};
+  const eventos = Array.isArray(raw.eventos_identificados)
+    ? raw.eventos_identificados
+        .map((item) => {
+          if (!isRecord(item)) {
+            const evento = cleanText(item);
+            return evento
+              ? {
+                  data: null,
+                  evento,
+                  fonte_documental: null,
+                  observacao: "Evento convertido para a estrutura atual."
+                }
+              : null;
+          }
+
+          const evento = pickFirstText(item, ["evento", "descricao", "titulo", "item"]);
+          if (!evento) return null;
+          return {
+            data: cleanNullableText(item.data),
+            evento,
+            fonte_documental: cleanNullableText(item.fonte_documental ?? item.fonte ?? item.documento),
+            observacao: prudentialText(
+              pickFirstText(item, ["observacao", "nota", "detalhe"]),
+              "Evento identificado a partir dos documentos disponiveis."
+            )
+          };
+        })
+        .filter(Boolean) as PreAnalysisReportOutput["cronologia"]["eventos_identificados"]
+    : [];
+
+  if (eventos.length) {
+    return {
+      eventos_identificados: eventos,
+      inconsistencias_temporais: toStringArray(raw.inconsistencias_temporais),
+      eventos_sem_prova_temporal: toStringArray(raw.eventos_sem_prova_temporal)
+    };
+  }
+
+  const dates = toStringArray(source.datas_relevantes ?? source.datas ?? source.timeline);
+  return {
+    eventos_identificados: dates.map((date) => ({
+      data: date,
+      evento: "Marco temporal identificado em relatorio legado",
+      fonte_documental: null,
+      observacao: "Conversao automatica do formato anterior."
+    })),
+    inconsistencias_temporais: [],
+    eventos_sem_prova_temporal: []
+  };
+}
+
+function normalizeOutrosDocumentos(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!isRecord(item)) {
+        const text = cleanText(item);
+        return text
+          ? {
+              tipo_ou_descricao: text,
+              peso_probatorio: "inconclusivo" as const,
+              observacoes: "Registro convertido para a estrutura atual."
+            }
+          : null;
+      }
+
+      const descricao = pickFirstText(item, ["tipo_ou_descricao", "tipo", "descricao", "documento", "titulo"]);
+      if (!descricao) return null;
+      return {
+        tipo_ou_descricao: descricao,
+        peso_probatorio: normalizePesoProbatorio(item.peso_probatorio ?? item.peso ?? item.qualidade),
+        observacoes: prudentialText(
+          pickFirstText(item, ["observacoes", "observacao", "nota", "detalhe"]),
+          "Analise convertida para a estrutura atual."
+        )
+      };
+    })
+    .filter(Boolean) as PreAnalysisReportOutput["analise_por_tipo_documental"]["outros_documentos"];
+}
+
+function normalizePontosExploraveis(value: unknown, source: Record<string, unknown>) {
+  const raw = Array.isArray(value) ? value : buildLegacyAttention(source);
+
+  if (Array.isArray(raw) && raw.length) {
+    return raw
       .map((item) => {
         if (typeof item === "string") {
-          const titulo = cleanText(item);
-          return titulo
+          const ponto = cleanText(item);
+          return ponto
             ? {
-                titulo,
-                prioridade: "relevant" as const,
-                explicacao: titulo
+                ponto,
+                categoria: "outro" as const,
+                relevancia: "media" as const,
+                explorabilidade: "media" as const,
+                necessita_validacao_humana: false,
+                justificativa: ponto
               }
             : null;
         }
@@ -358,266 +564,215 @@ function toAttentionArray(value: unknown, source: Record<string, unknown>) {
           return null;
         }
 
-        const titulo = pickFirstText(item, ["titulo", "item", "nome", "achado", "texto", "pedido"]);
-        const explicacao = pickFirstText(item, ["explicacao", "observacao", "detalhe", "detalhes", "justificativa"]);
-        const fundamento = pickFirstText(item, ["fundamento_documental", "fundamento", "evidencia"]);
-        const impacto = pickFirstText(item, ["impacto_para_defesa", "impacto", "acao_recomendada", "recomendacao"]);
-
-        const resolvedTitulo = titulo || explicacao;
-        if (!resolvedTitulo) {
+        const ponto = pickFirstText(item, ["ponto", "titulo", "item", "nome", "achado", "texto"]);
+        const justificativa = pickFirstText(item, ["justificativa", "explicacao", "observacao", "detalhe"]);
+        if (!ponto && !justificativa) {
           return null;
         }
 
         return {
-          titulo: resolvedTitulo,
-          prioridade: normalizePriority(item.prioridade ?? item.severidade ?? item.severity),
-          explicacao: explicacao || resolvedTitulo,
-          fundamento_documental: fundamento || undefined,
-          impacto_para_defesa: impacto || undefined
+          ponto: ponto || justificativa,
+          categoria: normalizeCategoria(item.categoria),
+          relevancia: normalizeRelevancia(item.relevancia ?? item.prioridade ?? item.severidade),
+          explorabilidade: normalizeExplorabilidade(item.explorabilidade ?? item.prioridade),
+          necessita_validacao_humana: toBoolean(item.necessita_validacao_humana),
+          justificativa: prudentialText(justificativa || ponto)
         };
       })
-      .filter(
-        (
-          item
-        ): item is {
-          titulo: string;
-          prioridade: "urgent" | "important" | "relevant" | "consider";
-          explicacao: string;
-          fundamento_documental?: string;
-          impacto_para_defesa?: string;
-        } => Boolean(item)
-      );
+      .filter(Boolean) as PreAnalysisReportOutput["pontos_exploraveis_defesa"];
   }
 
-  if (isRecord(rawValue)) {
-    const nestedArray = Object.values(rawValue).find(Array.isArray);
-    if (nestedArray) {
-      return toAttentionArray(nestedArray, source);
-    }
-
-    return toAttentionArray([rawValue], source);
-  }
-
-  const single = cleanText(rawValue);
-  return single
-    ? [
-        {
-          titulo: single,
-          prioridade: "relevant",
-          explicacao: single
-        }
-      ]
-    : [];
-}
-
-function toRecommendedDocumentArray(value: unknown, source: Record<string, unknown>) {
-  const rawValue = value ?? source.documentos_recomendados;
-
-  if (Array.isArray(rawValue)) {
-    return rawValue
-      .map((item) => {
-        if (typeof item === "string") {
-          const documento = cleanText(item);
-          return documento
-            ? {
-                documento,
-                prioridade: "relevant" as const,
-                justificativa: "Documento recomendado para robustecer a defesa."
-              }
-            : null;
-        }
-
-        if (!isRecord(item)) {
-          return null;
-        }
-
-        const documento = pickFirstText(item, ["documento", "item", "nome", "titulo", "texto"]);
-        const justificativa = pickFirstText(item, ["justificativa", "observacao", "detalhe", "detalhes", "motivo"]);
-
-        return documento
-          ? {
-              documento,
-              prioridade: normalizePriority(item.prioridade ?? item.severidade ?? item.severity),
-              justificativa: justificativa || "Documento recomendado para robustecer a defesa."
-            }
-          : null;
-      })
-      .filter(
-        (
-          item
-        ): item is {
-          documento: string;
-          prioridade: "urgent" | "important" | "relevant" | "consider";
-          justificativa: string;
-        } => Boolean(item)
-      );
-  }
-
-  if (isRecord(rawValue)) {
-    const nestedArray = Object.values(rawValue).find(Array.isArray);
-    if (nestedArray) {
-      return toRecommendedDocumentArray(nestedArray, source);
-    }
-
-    return toRecommendedDocumentArray([rawValue], source);
-  }
-
-  const documento = cleanText(rawValue);
-  return documento
-    ? [
-        {
-          documento,
-          prioridade: "relevant",
-          justificativa: "Documento recomendado para robustecer a defesa."
-        }
-      ]
-    : [];
-}
-
-function toRiskArray(value: unknown, source: Record<string, unknown>) {
-  const rawValue = value ?? source.riscos_preliminares;
-
-  if (Array.isArray(rawValue)) {
-    return rawValue
-      .map((item) => {
-        if (typeof item === "string") {
-          const titulo = cleanText(item);
-          return titulo
-            ? {
-                titulo,
-                severidade: "medium" as const,
-                observacao: titulo
-              }
-            : null;
-        }
-
-        if (!isRecord(item)) {
-          return null;
-        }
-
-        const titulo = pickFirstText(item, ["titulo", "item", "nome", "texto", "descricao"]);
-        const observacao = pickFirstText(item, ["observacao", "detalhe", "detalhes", "justificativa"]);
-        const resolvedTitulo = titulo || observacao;
-
-        return resolvedTitulo
-          ? {
-              titulo: resolvedTitulo,
-              severidade: normalizeRisk(item.severidade ?? item.severity ?? item.risco),
-              observacao: observacao || resolvedTitulo
-            }
-          : null;
-      })
-      .filter(
-        (
-          item
-        ): item is {
-          titulo: string;
-          severidade: "low" | "medium" | "high";
-          observacao: string;
-        } => Boolean(item)
-      );
-  }
-
-  if (isRecord(rawValue)) {
-    const nestedArray = Object.values(rawValue).find(Array.isArray);
-    if (nestedArray) {
-      return toRiskArray(nestedArray, source);
-    }
-
-    return toRiskArray([rawValue], source);
-  }
-
-  const titulo = cleanText(rawValue);
-  return titulo
-    ? [
-        {
-          titulo,
-          severidade: "medium",
-          observacao: titulo
-        }
-      ]
-    : [];
-}
-
-function deriveOverallAlertLevel(source: {
-  analise_documental_do_autor: Array<{ itens: Array<{ risco: string }> }>;
-  pontos_de_atencao_para_a_defesa: Array<{ prioridade: string }>;
-  riscos_preliminares: Array<{ severidade: string }>;
-}) {
-  const hasHighRisk =
-    source.analise_documental_do_autor.some((section) => section.itens.some((item) => item.risco === "high")) ||
-    source.riscos_preliminares.some((item) => item.severidade === "high") ||
-    source.pontos_de_atencao_para_a_defesa.some((item) => item.prioridade === "urgent");
-
-  if (hasHighRisk) {
-    return "high" as const;
-  }
-
-  const hasMediumRisk =
-    source.analise_documental_do_autor.some((section) => section.itens.some((item) => item.risco === "medium")) ||
-    source.riscos_preliminares.some((item) => item.severidade === "medium") ||
-    source.pontos_de_atencao_para_a_defesa.some((item) => item.prioridade === "important" || item.prioridade === "relevant");
-
-  return hasMediumRisk ? ("medium" as const) : ("low" as const);
+  return [];
 }
 
 export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysisReportOutput {
   const source = isRecord(payload) ? payload : {};
-  const headerSource = isRecord(source.cabecalho_relatorio) ? source.cabecalho_relatorio : {};
-  const diagnosticSource = isRecord(source.diagnostico_inicial) ? source.diagnostico_inicial : {};
-  const summarySource = isRecord(source.quadro_resumo) ? source.quadro_resumo : {};
+  const narrativa = isRecord(source.analise_narrativa_vs_documentos) ? source.analise_narrativa_vs_documentos : {};
+  const embasamNarrativa = isRecord(narrativa.documentos_embasam_narrativa) ? narrativa.documentos_embasam_narrativa : {};
+  const embasamPedidos = isRecord(narrativa.documentos_embasam_pedidos) ? narrativa.documentos_embasam_pedidos : {};
+  const matriz = isRecord(source.matriz_final_confronto) ? source.matriz_final_confronto : {};
+  const coerencia = isRecord(source.coerencia_entre_documentos) ? source.coerencia_entre_documentos : {};
+  const cadeia = isRecord(source.cadeia_negocial) ? source.cadeia_negocial : {};
+  const tipoDocumental = isRecord(source.analise_por_tipo_documental) ? source.analise_por_tipo_documental : {};
+  const procuracao = isRecord(tipoDocumental.procuracao) ? tipoDocumental.procuracao : {};
+  const identidade = isRecord(tipoDocumental.documento_identidade) ? tipoDocumental.documento_identidade : {};
+  const endereco = isRecord(tipoDocumental.comprovante_endereco) ? tipoDocumental.comprovante_endereco : {};
+  const pagamentos = isRecord(tipoDocumental.comprovantes_pagamento) ? tipoDocumental.comprovantes_pagamento : {};
+  const prints = isRecord(tipoDocumental.prints_tela) ? tipoDocumental.prints_tela : {};
+  const suficiencia = isRecord(source.suficiencia_probatoria) ? source.suficiencia_probatoria : {};
+  const pedidoIndenizatorio = isRecord(source.pedido_indenizatorio) ? source.pedido_indenizatorio : {};
+  const canalDocumento = isRecord(source.compatibilidade_canal_documento) ? source.compatibilidade_canal_documento : {};
+  const integridade = isRecord(source.integridade_tecnica_arquivos) ? source.integridade_tecnica_arquivos : {};
+  const representacao = isRecord(source.representacao_processual) ? source.representacao_processual : {};
+  const espacialidade = isRecord(source.espacialidade) ? source.espacialidade : {};
+  const litigancia = isRecord(source.indicios_litigancia_padronizada) ? source.indicios_litigancia_padronizada : {};
 
-  const normalizedPayload = {
-    cabecalho_relatorio: {
-      titulo_relatorio:
-        pickFirstText(headerSource, ["titulo_relatorio", "titulo", "nome"]) || "Laudo previo operacional",
-      subtitulo:
-        pickFirstText(headerSource, ["subtitulo", "escopo", "descricao"]) ||
-        "Analise inicial da demanda com foco em documentos do autor e preparacao da defesa.",
-      aviso:
-        pickFirstText(headerSource, ["aviso", "disclaimer", "nota"]) ||
-        "Este laudo tem carater tecnico-operacional e deve ser revisado pelo advogado responsavel antes de qualquer estrategia defensiva."
-    },
-    diagnostico_inicial: {
-      resumo_executivo:
-        pickFirstText(diagnosticSource, ["resumo_executivo", "resumo", "texto", "descricao"]) ||
-        (() => {
-          if (typeof source.resumo_estruturado_do_caso === "string") {
-            return cleanText(source.resumo_estruturado_do_caso);
-          }
+  const legacySummary = buildLegacySummary(source);
+  const legacyFindings = buildLegacyFindings(source);
+  const legacyDocuments = buildLegacyRecommendedDocuments(source);
 
-          if (isRecord(source.resumo_estruturado_do_caso)) {
-            return pickFirstText(source.resumo_estruturado_do_caso, ["texto", "resumo", "descricao", "conteudo"]);
-          }
-
-          return "";
-        })(),
-      pedidos_identificados: toPedidoArray(diagnosticSource.pedidos_identificados ?? source.pedidos_identificados),
-      fatos_relevantes: toStringArray(diagnosticSource.fatos_relevantes ?? source.fatos_relevantes),
-      lacunas_iniciais: toStringArray(diagnosticSource.lacunas_iniciais ?? source.lacunas_iniciais)
-    },
-    analise_documental_do_autor: toDocumentSectionArray(source.analise_documental_do_autor, source),
-    pontos_de_atencao_para_a_defesa: toAttentionArray(source.pontos_de_atencao_para_a_defesa, source),
-    documentos_recomendados: toRecommendedDocumentArray(source.documentos_recomendados, source),
-    riscos_preliminares: toRiskArray(source.riscos_preliminares, source),
-    observacoes_gerais: toStringArray(source.observacoes_gerais)
-  };
-
-  const derivedAlertLevel = deriveOverallAlertLevel(normalizedPayload);
-
-  const fullPayload = {
-    ...normalizedPayload,
-    quadro_resumo: {
-      nivel_geral_de_alerta: cleanText(
-        summarySource.nivel_geral_de_alerta || summarySource.risco_geral || summarySource.alerta_geral
+  return preAnalysisReportSchema.parse({
+    resumo_executivo: prudentialText(source.resumo_executivo ?? legacySummary),
+    matriz_final_confronto: {
+      o_que_autor_narra: toStringArray(matriz.o_que_autor_narra ?? source.fatos_relevantes),
+      o_que_documentos_provam: toStringArray(matriz.o_que_documentos_provam ?? legacyFindings),
+      o_que_documentos_nao_provam: toStringArray(matriz.o_que_documentos_nao_provam ?? source.lacunas_iniciais),
+      o_que_pode_ser_explorado_pela_defesa: toStringArray(
+        matriz.o_que_pode_ser_explorado_pela_defesa ?? source.pontos_de_atencao_para_a_defesa
       )
-        ? normalizeRisk(summarySource.nivel_geral_de_alerta || summarySource.risco_geral || summarySource.alerta_geral)
-        : derivedAlertLevel,
-      sintese_final:
-        pickFirstText(summarySource, ["sintese_final", "resumo_final", "conclusao", "texto"]) ||
-        normalizedPayload.diagnostico_inicial.resumo_executivo
-    }
-  };
-
-  return preAnalysisReportSchema.parse(fullPayload);
+    },
+    analise_narrativa_vs_documentos: {
+      documentos_embasam_narrativa: {
+        conclusao: normalizeYesPartialNo(embasamNarrativa.conclusao),
+        justificativa: prudentialText(
+          embasamNarrativa.justificativa,
+          "Nao foi possivel verificar com os documentos disponiveis o grau integral de aderencia entre narrativa e anexos."
+        ),
+        pontos_fortes: toStringArray(embasamNarrativa.pontos_fortes ?? legacyFindings.slice(0, 3)),
+        lacunas: toStringArray(embasamNarrativa.lacunas ?? source.lacunas_iniciais)
+      },
+      documentos_embasam_pedidos: {
+        conclusao: normalizeYesPartialNo(embasamPedidos.conclusao),
+        justificativa: prudentialText(
+          embasamPedidos.justificativa,
+          "Nao foi possivel verificar com os documentos disponiveis o suporte integral dos pedidos formulados."
+        ),
+        pedidos_sustentados: toStringArray(embasamPedidos.pedidos_sustentados),
+        pedidos_nao_sustentados_ou_fracos: toStringArray(
+          embasamPedidos.pedidos_nao_sustentados_ou_fracos ?? source.lacunas_iniciais
+        )
+      }
+    },
+    analise_individualizada_por_autor: normalizeIndividualAuthors(source.analise_individualizada_por_autor, source),
+    cadeia_negocial: {
+      quem_comprou: cleanNullableText(cadeia.quem_comprou),
+      quem_pagou: cleanNullableText(cadeia.quem_pagou),
+      quem_viajou_ou_seria_beneficiario: cleanNullableText(cadeia.quem_viajou_ou_seria_beneficiario),
+      quem_reclamou_ou_solicitou_suporte: cleanNullableText(cadeia.quem_reclamou_ou_solicitou_suporte),
+      quem_recebeu_ou_deveria_receber_estorno: cleanNullableText(cadeia.quem_recebeu_ou_deveria_receber_estorno),
+      divergencias_entre_pessoas: toStringArray(cadeia.divergencias_entre_pessoas)
+    },
+    cronologia: normalizeCronologia(source.cronologia, source),
+    coerencia_entre_documentos: {
+      nomes_divergentes: toStringArray(coerencia.nomes_divergentes),
+      datas_divergentes: toStringArray(coerencia.datas_divergentes),
+      valores_divergentes: toStringArray(coerencia.valores_divergentes),
+      codigos_localizadores_divergentes: toStringArray(coerencia.codigos_localizadores_divergentes),
+      emails_telefones_ou_identificadores_divergentes: toStringArray(
+        coerencia.emails_telefones_ou_identificadores_divergentes
+      ),
+      observacoes: prudentialText(
+        coerencia.observacoes,
+        "Coerencia interna analisada apenas a partir dos documentos disponiveis."
+      )
+    },
+    analise_por_tipo_documental: {
+      procuracao: {
+        existe: toBoolean(procuracao.existe),
+        regularidade_formal: prudentialText(procuracao.regularidade_formal),
+        assinatura_compatibilidade: normalizeAssinaturaCompatibilidade(procuracao.assinatura_compatibilidade),
+        pontos_de_atencao: toStringArray(procuracao.pontos_de_atencao)
+      },
+      documento_identidade: {
+        existe: toBoolean(identidade.existe),
+        compatibilidade_com_parte: prudentialText(identidade.compatibilidade_com_parte),
+        sinais_de_edicao_ou_layout_incompativel: toStringArray(identidade.sinais_de_edicao_ou_layout_incompativel),
+        pontos_de_atencao: toStringArray(identidade.pontos_de_atencao)
+      },
+      comprovante_endereco: {
+        existe: toBoolean(endereco.existe),
+        aderencia_ao_nome_da_parte: prudentialText(endereco.aderencia_ao_nome_da_parte),
+        aderencia_ao_endereco_da_inicial: prudentialText(endereco.aderencia_ao_endereco_da_inicial),
+        sinais_de_edicao_ou_layout_incompativel: toStringArray(endereco.sinais_de_edicao_ou_layout_incompativel),
+        pontos_de_atencao: toStringArray(endereco.pontos_de_atencao)
+      },
+      comprovantes_pagamento: {
+        existem: toBoolean(pagamentos.existem),
+        aderencia_ao_nome_da_parte: prudentialText(pagamentos.aderencia_ao_nome_da_parte),
+        datas_valores_identificados: toStringArray(pagamentos.datas_valores_identificados),
+        sinais_de_edicao_ou_layout_incompativel: toStringArray(pagamentos.sinais_de_edicao_ou_layout_incompativel),
+        pontos_de_atencao: toStringArray(pagamentos.pontos_de_atencao)
+      },
+      prints_tela: {
+        existem: toBoolean(prints.existem),
+        compatibilidade_com_plataforma_alegada: prudentialText(prints.compatibilidade_com_plataforma_alegada),
+        ["qualidade_probat\u00f3ria"]: normalizeQualidadePrint(
+          prints["qualidade_probat\u00f3ria"] ?? prints.qualidade_probatoria
+        ),
+        sinais_de_edicao_ou_recorte: toStringArray(prints.sinais_de_edicao_ou_recorte),
+        pontos_de_atencao: toStringArray(prints.pontos_de_atencao)
+      },
+      outros_documentos: normalizeOutrosDocumentos(tipoDocumental.outros_documentos)
+    },
+    suficiencia_probatoria: {
+      conclusao: normalizeSuficiencia(suficiencia.conclusao),
+      provas_fortes: toStringArray(suficiencia.provas_fortes),
+      provas_fracas_ou_unilaterais: toStringArray(suficiencia.provas_fracas_ou_unilaterais ?? legacyFindings),
+      documentos_chave_ausentes: toStringArray(suficiencia.documentos_chave_ausentes ?? legacyDocuments),
+      observacoes: prudentialText(
+        suficiencia.observacoes,
+        "A suficiencia probatoria foi estimada apenas a partir do material processado nesta etapa."
+      )
+    },
+    pedido_indenizatorio: {
+      dano_material_tem_prova_minima: normalizeYesPartialNo(pedidoIndenizatorio.dano_material_tem_prova_minima),
+      valor_pedido_tem_suporte_documental: normalizeYesPartialNo(pedidoIndenizatorio.valor_pedido_tem_suporte_documental),
+      dano_moral_tem_base_fatica_individualizada: normalizeYesPartialNo(
+        pedidoIndenizatorio.dano_moral_tem_base_fatica_individualizada
+      ),
+      despesas_extraordinarias_comprovadas: toStringArray(pedidoIndenizatorio.despesas_extraordinarias_comprovadas),
+      lacunas: toStringArray(pedidoIndenizatorio.lacunas ?? source.lacunas_iniciais)
+    },
+    compatibilidade_canal_documento: {
+      alegacoes_vs_canais_comprovados: toStringArray(canalDocumento.alegacoes_vs_canais_comprovados),
+      prova_de_contratacao: toStringArray(canalDocumento.prova_de_contratacao),
+      prova_de_tentativa: toStringArray(canalDocumento.prova_de_tentativa),
+      prova_de_oferta_ou_pre_reserva: toStringArray(canalDocumento.prova_de_oferta_ou_pre_reserva),
+      mera_consulta_ou_print_inconclusivo: toStringArray(canalDocumento.mera_consulta_ou_print_inconclusivo)
+    },
+    integridade_tecnica_arquivos: {
+      sinais_possiveis_de_manipulacao: toStringArray(integridade.sinais_possiveis_de_manipulacao),
+      limitacoes_da_analise: toStringArray(integridade.limitacoes_da_analise).length
+        ? toStringArray(integridade.limitacoes_da_analise)
+        : [
+            "Analise restrita ao texto extraido e aos metadados disponibilizados.",
+            "Nao ha OCR nem visao computacional robusta nesta etapa."
+          ],
+      necessita_validacao_humana:
+        typeof integridade.necessita_validacao_humana === "boolean"
+          ? integridade.necessita_validacao_humana
+          : true
+    },
+    representacao_processual: {
+      regularidade_aparente: normalizeRegularidade(representacao.regularidade_aparente),
+      pontos_de_atencao: toStringArray(representacao.pontos_de_atencao),
+      autores_sem_procuracao_ou_documento: toStringArray(representacao.autores_sem_procuracao_ou_documento)
+    },
+    espacialidade: {
+      cidades_enderecos_identificados: toStringArray(espacialidade.cidades_enderecos_identificados),
+      inconsistencias_territoriais: toStringArray(espacialidade.inconsistencias_territoriais),
+      observacoes: prudentialText(
+        espacialidade.observacoes,
+        "Elementos territoriais avaliados apenas a partir dos documentos disponiveis."
+      )
+    },
+    indicios_litigancia_padronizada: {
+      indicios: toStringArray(litigancia.indicios),
+      elementos_recorrentes: toStringArray(litigancia.elementos_recorrentes),
+      observacoes: prudentialText(
+        litigancia.observacoes,
+        "Nao inferir padronizacao sem apoio concreto no proprio material do caso."
+      )
+    },
+    pontos_exploraveis_defesa: normalizePontosExploraveis(source.pontos_exploraveis_defesa, source),
+    documentos_internos_recomendados_para_defesa:
+      toStringArray(source.documentos_internos_recomendados_para_defesa).length
+        ? toStringArray(source.documentos_internos_recomendados_para_defesa)
+        : legacyDocuments,
+    alertas_de_nao_conclusao: toStringArray(source.alertas_de_nao_conclusao).length
+      ? toStringArray(source.alertas_de_nao_conclusao)
+      : [
+          "Quando um elemento depender de analise visual, pericial ou documental complementar, a conclusao deve ser tratada como nao verificavel ou dependente de validacao humana."
+        ]
+  });
 }

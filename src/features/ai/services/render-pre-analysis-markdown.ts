@@ -130,10 +130,9 @@ export function renderPreAnalysisMarkdown(report: PreAnalysisReportOutput) {
   lines.push("### Procuracao");
   lines.push(`- Existe: ${report.analise_por_tipo_documental.procuracao.existe ? "Sim" : "Nao"}`);
   lines.push(`- Regularidade formal: ${report.analise_por_tipo_documental.procuracao.regularidade_formal}`);
-  lines.push(
-    `- Assinatura e compatibilidade: ${report.analise_por_tipo_documental.procuracao.assinatura_compatibilidade}`
-  );
-  pushList(lines, report.analise_por_tipo_documental.procuracao.pontos_de_atencao, "Sem pontos adicionais registrados.");
+  lines.push(`- Assinatura e compatibilidade: ${report.analise_por_tipo_documental.procuracao.assinatura_compatibilidade}`);
+  lines.push("- Pontos de atencao:");
+  pushList(lines, report.analise_por_tipo_documental.procuracao.pontos_de_atencao);
   lines.push("");
   lines.push("### Documento de identidade");
   lines.push(`- Existe: ${report.analise_por_tipo_documental.documento_identidade.existe ? "Sim" : "Nao"}`);
@@ -165,7 +164,7 @@ export function renderPreAnalysisMarkdown(report: PreAnalysisReportOutput) {
   lines.push("### Prints de tela");
   lines.push(`- Existem: ${report.analise_por_tipo_documental.prints_tela.existem ? "Sim" : "Nao"}`);
   lines.push(`- Compatibilidade com a plataforma alegada: ${report.analise_por_tipo_documental.prints_tela.compatibilidade_com_plataforma_alegada}`);
-  lines.push(`- Qualidade probatoria: ${report.analise_por_tipo_documental.prints_tela["qualidade_probatória"]}`);
+  lines.push(`- Qualidade probatoria: ${report.analise_por_tipo_documental.prints_tela["qualidade_probat\u00f3ria"]}`);
   lines.push("- Sinais de edicao ou recorte:");
   pushList(lines, report.analise_por_tipo_documental.prints_tela.sinais_de_edicao_ou_recorte);
   lines.push("- Pontos de atencao:");
@@ -177,6 +176,49 @@ export function renderPreAnalysisMarkdown(report: PreAnalysisReportOutput) {
   } else {
     for (const item of report.analise_por_tipo_documental.outros_documentos) {
       lines.push(`- ${item.tipo_ou_descricao} [${item.peso_probatorio}] - ${item.observacoes}`);
+    }
+  }
+  lines.push("");
+  lines.push("## Mapa documental do autor");
+  if (!report.mapa_documental_autor.length) {
+    lines.push("- Nao ha rastreabilidade documental estruturada.");
+  } else {
+    for (const item of report.mapa_documental_autor) {
+      lines.push(`### ${item.documento_referencia}`);
+      lines.push(`- Tipo documental: ${item.tipo_documento}`);
+      lines.push(`- Titular ou emitente: ${item.titular_ou_emitente ?? "Nao identificado"}`);
+      lines.push(`- Vinculo subjetivo: ${item.vinculo_subjetivo}`);
+      lines.push(`- Peso probatorio: ${item.peso_probatorio}`);
+      lines.push(`- Impacto para defesa: ${item.impacto_para_defesa}`);
+      lines.push("- Achados principais:");
+      pushList(lines, item.achados_principais);
+      lines.push("- Pontos de atencao:");
+      pushList(lines, item.pontos_de_atencao);
+      lines.push(`- Referencia de trecho ou contexto: ${item.referencia_trecho_ou_contexto ?? "Nao informada"}`);
+      lines.push("");
+    }
+  }
+  lines.push("## Priorizacao estrategica");
+  if (!report.priorizacao_estrategica.length) {
+    lines.push("- Nao ha prioridades estruturadas adicionais.");
+  } else {
+    for (const item of report.priorizacao_estrategica) {
+      lines.push(`- [${item.prioridade.toUpperCase()}] ${item.titulo}`);
+      lines.push(`  Motivo: ${item.motivo}`);
+      lines.push(`  Acao sugerida: ${item.acao_sugerida}`);
+      lines.push(`  Referencia documental: ${item.referencia_documental.join(", ") || "Nao informada"}`);
+    }
+  }
+  lines.push("");
+  lines.push("## Fatos supervenientes ou da emenda");
+  if (!report.fatos_supervenientes_ou_da_emenda.length) {
+    lines.push("- Nao ha fatos supervenientes estruturados.");
+  } else {
+    for (const item of report.fatos_supervenientes_ou_da_emenda) {
+      lines.push(`- ${item.descricao}`);
+      lines.push(`  Impacto para defesa: ${item.impacto_para_defesa}`);
+      lines.push(`  Exige enfrentamento especifico: ${item.exige_enfrentamento_especifico ? "Sim" : "Nao"}`);
+      lines.push(`  Referencia documental: ${item.referencia_documental.join(", ") || "Nao informada"}`);
     }
   }
   lines.push("");
@@ -192,12 +234,8 @@ export function renderPreAnalysisMarkdown(report: PreAnalysisReportOutput) {
   lines.push("");
   lines.push("## Pedido indenizatorio");
   lines.push(`- Dano material tem prova minima: ${yesPartialNoLabel(report.pedido_indenizatorio.dano_material_tem_prova_minima)}`);
-  lines.push(
-    `- Valor pedido tem suporte documental: ${yesPartialNoLabel(report.pedido_indenizatorio.valor_pedido_tem_suporte_documental)}`
-  );
-  lines.push(
-    `- Dano moral tem base fatica individualizada: ${yesPartialNoLabel(report.pedido_indenizatorio.dano_moral_tem_base_fatica_individualizada)}`
-  );
+  lines.push(`- Valor pedido tem suporte documental: ${yesPartialNoLabel(report.pedido_indenizatorio.valor_pedido_tem_suporte_documental)}`);
+  lines.push(`- Dano moral tem base fatica individualizada: ${yesPartialNoLabel(report.pedido_indenizatorio.dano_moral_tem_base_fatica_individualizada)}`);
   lines.push("- Despesas extraordinarias comprovadas:");
   pushList(lines, report.pedido_indenizatorio.despesas_extraordinarias_comprovadas);
   lines.push("- Lacunas:");
@@ -222,9 +260,7 @@ export function renderPreAnalysisMarkdown(report: PreAnalysisReportOutput) {
   pushList(lines, report.alertas_de_nao_conclusao);
   lines.push("- Limitacoes da analise tecnica:");
   pushList(lines, report.integridade_tecnica_arquivos.limitacoes_da_analise);
-  lines.push(
-    `- Necessita validacao humana: ${report.integridade_tecnica_arquivos.necessita_validacao_humana ? "Sim" : "Nao"}`
-  );
+  lines.push(`- Necessita validacao humana: ${report.integridade_tecnica_arquivos.necessita_validacao_humana ? "Sim" : "Nao"}`);
 
   return lines.join("\n");
 }

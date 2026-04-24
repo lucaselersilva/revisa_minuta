@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 const yesPartialNoSchema = z.enum(["sim", "parcialmente", "nao", "inconclusivo"]);
+const pesoProbatorioSchema = z.enum(["forte", "medio", "fraco", "inconclusivo", "contraditorio"]);
+const prioridadeEstrategicaSchema = z.enum(["urgente", "importante", "relevante", "considerar"]);
+const vinculoSubjetivoSchema = z.enum(["autor_direto", "terceiro", "nao_identificado", "divergente"]);
+
 const confrontoSchema = z.object({
   o_que_autor_narra: z.array(z.string()),
   o_que_documentos_provam: z.array(z.string()),
@@ -38,9 +42,34 @@ const cronologiaEventoSchema = z.object({
   observacao: z.string()
 });
 
-const tipoPesoSchema = z.enum(["forte", "medio", "fraco", "inconclusivo", "contraditorio"]);
+const mapaDocumentalItemSchema = z.object({
+  documento_referencia: z.string(),
+  tipo_documento: z.string(),
+  titular_ou_emitente: z.string().nullable(),
+  vinculo_subjetivo: vinculoSubjetivoSchema,
+  peso_probatorio: pesoProbatorioSchema,
+  achados_principais: z.array(z.string()),
+  impacto_para_defesa: z.string(),
+  pontos_de_atencao: z.array(z.string()),
+  referencia_trecho_ou_contexto: z.string().nullable()
+});
 
-const preAnalysisReportSchemaInternal = z.object({
+const priorizacaoItemSchema = z.object({
+  titulo: z.string(),
+  prioridade: prioridadeEstrategicaSchema,
+  motivo: z.string(),
+  acao_sugerida: z.string(),
+  referencia_documental: z.array(z.string())
+});
+
+const fatoSupervenienteSchema = z.object({
+  descricao: z.string(),
+  impacto_para_defesa: z.string(),
+  exige_enfrentamento_especifico: z.boolean(),
+  referencia_documental: z.array(z.string())
+});
+
+export const preAnalysisReportSchema = z.object({
   resumo_executivo: z.string(),
   matriz_final_confronto: confrontoSchema,
   analise_narrativa_vs_documentos: z.object({
@@ -106,11 +135,14 @@ const preAnalysisReportSchemaInternal = z.object({
     outros_documentos: z.array(
       z.object({
         tipo_ou_descricao: z.string(),
-        peso_probatorio: tipoPesoSchema,
+        peso_probatorio: pesoProbatorioSchema,
         observacoes: z.string()
       })
     )
   }),
+  mapa_documental_autor: z.array(mapaDocumentalItemSchema),
+  priorizacao_estrategica: z.array(priorizacaoItemSchema),
+  fatos_supervenientes_ou_da_emenda: z.array(fatoSupervenienteSchema),
   suficiencia_probatoria: z.object({
     conclusao: z.enum(["suficiente", "parcial", "insuficiente", "inconclusiva"]),
     provas_fortes: z.array(z.string()),
@@ -176,7 +208,6 @@ const preAnalysisReportSchemaInternal = z.object({
   alertas_de_nao_conclusao: z.array(z.string())
 });
 
-export const preAnalysisReportSchema = preAnalysisReportSchemaInternal;
 export type PreAnalysisReportOutput = z.infer<typeof preAnalysisReportSchema>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -207,6 +238,11 @@ function pickFirstText(record: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
+function prudentialText(value: unknown, fallback = "Nao foi possivel verificar com os documentos disponiveis.") {
+  const text = cleanText(value);
+  return text || fallback;
+}
+
 function toStringArray(value: unknown) {
   if (Array.isArray(value)) {
     return value
@@ -220,13 +256,13 @@ function toStringArray(value: unknown) {
             "item",
             "texto",
             "descricao",
-            "descricao_curta",
             "observacao",
             "titulo",
             "evento",
             "documento",
             "pedido",
-            "ponto"
+            "ponto",
+            "descricao_curta"
           ]);
         }
 
@@ -261,47 +297,56 @@ function toBoolean(value: unknown) {
 function normalizeYesPartialNo(value: unknown): z.infer<typeof yesPartialNoSchema> {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["sim", "yes", "sustentado", "sustentada", "comprovado", "comprovada"].includes(normalized)) {
+  if (["sim", "yes", "comprovado", "comprovada", "sustentado", "sustentada"].includes(normalized)) {
     return "sim";
   }
 
-  if (["parcialmente", "parcial", "em parte"].includes(normalized)) {
+  if (["parcial", "parcialmente", "em parte"].includes(normalized)) {
     return "parcialmente";
   }
 
-  if (["nao", "não", "no", "ausente", "fraco", "insuficiente"].includes(normalized)) {
+  if (["nao", "não", "ausente", "fraco", "insuficiente"].includes(normalized)) {
     return "nao";
   }
 
   return "inconclusivo";
 }
 
+function normalizePesoProbatorio(value: unknown): z.infer<typeof pesoProbatorioSchema> {
+  const normalized = cleanText(value).toLowerCase();
+
+  if (["forte", "alto", "alta"].includes(normalized)) return "forte";
+  if (["medio", "médio", "media", "média", "regular"].includes(normalized)) return "medio";
+  if (["fraco", "fraca", "baixo", "baixa"].includes(normalized)) return "fraco";
+  if (normalized.includes("contradit")) return "contraditorio";
+  return "inconclusivo";
+}
+
+function normalizePrioridade(value: unknown): z.infer<typeof prioridadeEstrategicaSchema> {
+  const normalized = cleanText(value).toLowerCase();
+
+  if (["urgente", "urgent", "critico", "critica"].includes(normalized)) return "urgente";
+  if (["importante", "important"].includes(normalized)) return "importante";
+  if (["relevante", "relevant", "medio", "médio", "media", "média"].includes(normalized)) return "relevante";
+  return "considerar";
+}
+
+function normalizeVinculoSubjetivo(value: unknown): z.infer<typeof vinculoSubjetivoSchema> {
+  const normalized = cleanText(value).toLowerCase();
+
+  if (normalized.includes("autor") || normalized.includes("direto")) return "autor_direto";
+  if (normalized.includes("terceiro")) return "terceiro";
+  if (normalized.includes("diverg")) return "divergente";
+  return "nao_identificado";
+}
+
 function normalizeQualidadePrint(value: unknown): "forte" | "media" | "fraca" | "inconclusiva" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["forte", "alta", "alto"].includes(normalized)) {
-    return "forte";
-  }
-
-  if (["media", "medio", "médio", "regular"].includes(normalized)) {
-    return "media";
-  }
-
-  if (["fraca", "fraco", "baixa", "baixo"].includes(normalized)) {
-    return "fraca";
-  }
-
-  return "inconclusiva";
-}
-
-function normalizePesoProbatorio(value: unknown): z.infer<typeof tipoPesoSchema> {
-  const normalized = cleanText(value).toLowerCase();
-
   if (["forte", "alta", "alto"].includes(normalized)) return "forte";
-  if (["medio", "médio", "media", "média", "regular"].includes(normalized)) return "medio";
-  if (["fraco", "fraca", "baixo", "baixa"].includes(normalized)) return "fraco";
-  if (["contraditorio", "contraditório", "contraditoria", "contraditoria"].includes(normalized)) return "contraditorio";
-  return "inconclusivo";
+  if (["media", "média", "medio", "médio", "regular"].includes(normalized)) return "media";
+  if (["fraca", "fraco", "baixa", "baixo"].includes(normalized)) return "fraca";
+  return "inconclusiva";
 }
 
 function normalizeAssinaturaCompatibilidade(
@@ -309,8 +354,8 @@ function normalizeAssinaturaCompatibilidade(
 ): "compativel" | "incompativel" | "indicio_de_inconsistencia" | "nao_verificavel" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["compativel", "compatível"].includes(normalized)) return "compativel";
-  if (["incompativel", "incompatível"].includes(normalized)) return "incompativel";
+  if (normalized.includes("compativ")) return "compativel";
+  if (normalized.includes("incompativ")) return "incompativel";
   if (normalized.includes("indicio") || normalized.includes("inconsist")) return "indicio_de_inconsistencia";
   return "nao_verificavel";
 }
@@ -318,18 +363,18 @@ function normalizeAssinaturaCompatibilidade(
 function normalizeSuficiencia(value: unknown): "suficiente" | "parcial" | "insuficiente" | "inconclusiva" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["suficiente", "adequada", "adequado"].includes(normalized)) return "suficiente";
-  if (["parcial", "parcialmente"].includes(normalized)) return "parcial";
-  if (["insuficiente", "fraca", "fraco"].includes(normalized)) return "insuficiente";
+  if (normalized.includes("suficiente")) return "suficiente";
+  if (normalized.includes("parcial")) return "parcial";
+  if (normalized.includes("insuf")) return "insuficiente";
   return "inconclusiva";
 }
 
 function normalizeRegularidade(value: unknown): "regular" | "parcial" | "irregular" | "inconclusiva" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["regular", "ok"].includes(normalized)) return "regular";
-  if (["parcial", "parcialmente"].includes(normalized)) return "parcial";
-  if (["irregular"].includes(normalized)) return "irregular";
+  if (normalized.includes("regular")) return "regular";
+  if (normalized.includes("parcial")) return "parcial";
+  if (normalized.includes("irregular")) return "irregular";
   return "inconclusiva";
 }
 
@@ -352,23 +397,18 @@ function normalizeCategoria(
 function normalizeRelevancia(value: unknown): "baixa" | "media" | "alta" | "critica" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["critica", "crítica", "critico", "crítico"].includes(normalized)) return "critica";
-  if (["alta", "alto"].includes(normalized)) return "alta";
-  if (["media", "média", "medio", "médio", "moderada", "moderado"].includes(normalized)) return "media";
+  if (normalized.includes("crit")) return "critica";
+  if (normalized.includes("alta") || normalized.includes("alto")) return "alta";
+  if (normalized.includes("media") || normalized.includes("média") || normalized.includes("medio") || normalized.includes("médio")) return "media";
   return "baixa";
 }
 
 function normalizeExplorabilidade(value: unknown): "baixa" | "media" | "alta" {
   const normalized = cleanText(value).toLowerCase();
 
-  if (["alta", "alto"].includes(normalized)) return "alta";
-  if (["media", "média", "medio", "médio", "moderada", "moderado"].includes(normalized)) return "media";
+  if (normalized.includes("alta") || normalized.includes("alto")) return "alta";
+  if (normalized.includes("media") || normalized.includes("média") || normalized.includes("medio") || normalized.includes("médio")) return "media";
   return "baixa";
-}
-
-function prudentialText(text: unknown, fallback = "Nao foi possivel verificar com os documentos disponiveis.") {
-  const cleaned = cleanText(text);
-  return cleaned || fallback;
 }
 
 function buildLegacySummary(source: Record<string, unknown>) {
@@ -420,17 +460,13 @@ function normalizeIndividualAuthors(value: unknown, source: Record<string, unkno
             : null;
         }
 
-        const nome = pickFirstText(item, ["nome_autor", "autor", "nome", "parte"]);
         return {
-          nome_autor: nome || "Autor nao identificado",
+          nome_autor: pickFirstText(item, ["nome_autor", "autor", "nome", "parte"]) || "Autor nao identificado",
           documentos_vinculados: toStringArray(item.documentos_vinculados ?? item.documentos ?? item.vinculos_documentais),
           pedidos_vinculados: toStringArray(item.pedidos_vinculados ?? item.pedidos),
           danos_individualizados: toStringArray(item.danos_individualizados ?? item.danos),
           lacunas_individualizacao: toStringArray(item.lacunas_individualizacao ?? item.lacunas),
-          observacoes: prudentialText(
-            pickFirstText(item, ["observacoes", "observacao", "nota"]),
-            "Nao foi possivel verificar com os documentos disponiveis a individualizacao completa."
-          )
+          observacoes: prudentialText(item.observacoes ?? item.observacao)
         };
       })
       .filter(Boolean) as PreAnalysisReportOutput["analise_individualizada_por_autor"];
@@ -442,9 +478,9 @@ function normalizeIndividualAuthors(value: unknown, source: Record<string, unkno
       if (!isRecord(item)) return null;
       const role = cleanText(item.role ?? item.tipo ?? item.papel).toLowerCase();
       if (!role.includes("author") && !role.includes("autor")) return null;
-      const name = pickFirstText(item, ["name", "nome", "parte"]);
+
       return {
-        nome_autor: name || "Autor nao identificado",
+        nome_autor: pickFirstText(item, ["name", "nome", "parte"]) || "Autor nao identificado",
         documentos_vinculados: [],
         pedidos_vinculados: [],
         danos_individualizados: [],
@@ -461,11 +497,11 @@ function normalizeCronologia(value: unknown, source: Record<string, unknown>) {
     ? raw.eventos_identificados
         .map((item) => {
           if (!isRecord(item)) {
-            const evento = cleanText(item);
-            return evento
+            const text = cleanText(item);
+            return text
               ? {
                   data: null,
-                  evento,
+                  evento: text,
                   fonte_documental: null,
                   observacao: "Evento convertido para a estrutura atual."
                 }
@@ -474,14 +510,12 @@ function normalizeCronologia(value: unknown, source: Record<string, unknown>) {
 
           const evento = pickFirstText(item, ["evento", "descricao", "titulo", "item"]);
           if (!evento) return null;
+
           return {
             data: cleanNullableText(item.data),
             evento,
             fonte_documental: cleanNullableText(item.fonte_documental ?? item.fonte ?? item.documento),
-            observacao: prudentialText(
-              pickFirstText(item, ["observacao", "nota", "detalhe"]),
-              "Evento identificado a partir dos documentos disponiveis."
-            )
+            observacao: prudentialText(item.observacao ?? item.nota ?? item.detalhe)
           };
         })
         .filter(Boolean) as PreAnalysisReportOutput["cronologia"]["eventos_identificados"]
@@ -526,63 +560,170 @@ function normalizeOutrosDocumentos(value: unknown) {
           : null;
       }
 
-      const descricao = pickFirstText(item, ["tipo_ou_descricao", "tipo", "descricao", "documento", "titulo"]);
-      if (!descricao) return null;
       return {
-        tipo_ou_descricao: descricao,
+        tipo_ou_descricao: pickFirstText(item, ["tipo_ou_descricao", "tipo", "descricao", "documento", "titulo"]) || "Documento nao identificado",
         peso_probatorio: normalizePesoProbatorio(item.peso_probatorio ?? item.peso ?? item.qualidade),
-        observacoes: prudentialText(
-          pickFirstText(item, ["observacoes", "observacao", "nota", "detalhe"]),
-          "Analise convertida para a estrutura atual."
-        )
+        observacoes: prudentialText(item.observacoes ?? item.observacao)
       };
     })
     .filter(Boolean) as PreAnalysisReportOutput["analise_por_tipo_documental"]["outros_documentos"];
 }
 
-function normalizePontosExploraveis(value: unknown, source: Record<string, unknown>) {
-  const raw = Array.isArray(value) ? value : buildLegacyAttention(source);
-
-  if (Array.isArray(raw) && raw.length) {
-    return raw
+function normalizeMapaDocumental(value: unknown, source: Record<string, unknown>) {
+  if (Array.isArray(value) && value.length) {
+    return value
       .map((item) => {
-        if (typeof item === "string") {
-          const ponto = cleanText(item);
-          return ponto
+        if (!isRecord(item)) {
+          const text = cleanText(item);
+          return text
             ? {
-                ponto,
-                categoria: "outro" as const,
-                relevancia: "media" as const,
-                explorabilidade: "media" as const,
-                necessita_validacao_humana: false,
-                justificativa: ponto
+                documento_referencia: text,
+                tipo_documento: "nao identificado",
+                titular_ou_emitente: null,
+                vinculo_subjetivo: "nao_identificado" as const,
+                peso_probatorio: "inconclusivo" as const,
+                achados_principais: [],
+                impacto_para_defesa: "Registro convertido para a estrutura atual.",
+                pontos_de_atencao: [],
+                referencia_trecho_ou_contexto: null
               }
             : null;
         }
 
-        if (!isRecord(item)) {
-          return null;
-        }
-
-        const ponto = pickFirstText(item, ["ponto", "titulo", "item", "nome", "achado", "texto"]);
-        const justificativa = pickFirstText(item, ["justificativa", "explicacao", "observacao", "detalhe"]);
-        if (!ponto && !justificativa) {
-          return null;
-        }
-
         return {
-          ponto: ponto || justificativa,
-          categoria: normalizeCategoria(item.categoria),
-          relevancia: normalizeRelevancia(item.relevancia ?? item.prioridade ?? item.severidade),
-          explorabilidade: normalizeExplorabilidade(item.explorabilidade ?? item.prioridade),
-          necessita_validacao_humana: toBoolean(item.necessita_validacao_humana),
-          justificativa: prudentialText(justificativa || ponto)
+          documento_referencia:
+            pickFirstText(item, ["documento_referencia", "documento", "arquivo", "fonte", "id_documento"]) ||
+            "Documento nao identificado",
+          tipo_documento: pickFirstText(item, ["tipo_documento", "tipo", "categoria"]) || "nao identificado",
+          titular_ou_emitente: cleanNullableText(item.titular_ou_emitente ?? item.emitente ?? item.titular),
+          vinculo_subjetivo: normalizeVinculoSubjetivo(item.vinculo_subjetivo ?? item.vinculo),
+          peso_probatorio: normalizePesoProbatorio(item.peso_probatorio ?? item.peso),
+          achados_principais: toStringArray(item.achados_principais ?? item.achados),
+          impacto_para_defesa: prudentialText(item.impacto_para_defesa ?? item.impacto),
+          pontos_de_atencao: toStringArray(item.pontos_de_atencao),
+          referencia_trecho_ou_contexto: cleanNullableText(
+            item.referencia_trecho_ou_contexto ?? item.referencia ?? item.contexto
+          )
         };
       })
-      .filter(Boolean) as PreAnalysisReportOutput["pontos_exploraveis_defesa"];
+      .filter(Boolean) as PreAnalysisReportOutput["mapa_documental_autor"];
   }
 
-  return [];
+  const legacyFindings = buildLegacyFindings(source);
+  return legacyFindings.slice(0, 6).map((finding, index) => ({
+    documento_referencia: `Achado documental ${index + 1}`,
+    tipo_documento: "nao identificado",
+    titular_ou_emitente: null,
+    vinculo_subjetivo: "nao_identificado",
+    peso_probatorio: "inconclusivo",
+    achados_principais: [finding],
+    impacto_para_defesa: "Achado legado convertido para rastreabilidade sintetica.",
+    pontos_de_atencao: [],
+    referencia_trecho_ou_contexto: null
+  }));
+}
+
+function normalizePriorizacao(value: unknown, source: Record<string, unknown>) {
+  const raw = Array.isArray(value) ? value : buildLegacyAttention(source);
+
+  return raw
+    .map((item) => {
+      if (typeof item === "string") {
+        const text = cleanText(item);
+        return text
+          ? {
+              titulo: text,
+              prioridade: "relevante" as const,
+              motivo: text,
+              acao_sugerida: "Validar documentalmente e avaliar exploracao pela defesa.",
+              referencia_documental: []
+            }
+          : null;
+      }
+
+      if (!isRecord(item)) return null;
+
+      return {
+        titulo: pickFirstText(item, ["titulo", "item", "nome", "ponto"]) || "Prioridade nao identificada",
+        prioridade: normalizePrioridade(item.prioridade ?? item.severidade ?? item.relevancia),
+        motivo: prudentialText(item.motivo ?? item.justificativa ?? item.explicacao ?? item.observacao),
+        acao_sugerida: prudentialText(
+          item.acao_sugerida ?? item.acao ?? item.recomendacao,
+          "Conferir o conjunto documental e avaliar reflexo na estrategia defensiva."
+        ),
+        referencia_documental: toStringArray(item.referencia_documental ?? item.documentos ?? item.referencias)
+      };
+    })
+    .filter(Boolean) as PreAnalysisReportOutput["priorizacao_estrategica"];
+}
+
+function normalizeFatosSupervenientes(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!isRecord(item)) {
+        const text = cleanText(item);
+        return text
+          ? {
+              descricao: text,
+              impacto_para_defesa: "Fato superveniente convertido para a estrutura atual.",
+              exige_enfrentamento_especifico: true,
+              referencia_documental: []
+            }
+          : null;
+      }
+
+      return {
+        descricao: pickFirstText(item, ["descricao", "fato", "titulo", "item"]) || "Fato superveniente nao identificado",
+        impacto_para_defesa: prudentialText(item.impacto_para_defesa ?? item.impacto),
+        exige_enfrentamento_especifico: toBoolean(
+          item.exige_enfrentamento_especifico ?? item.exige_enfrentamento ?? item.prioritario
+        ),
+        referencia_documental: toStringArray(item.referencia_documental ?? item.documentos ?? item.referencias)
+      };
+    })
+    .filter(Boolean) as PreAnalysisReportOutput["fatos_supervenientes_ou_da_emenda"];
+}
+
+function normalizePontosExploraveis(value: unknown, source: Record<string, unknown>) {
+  const raw = Array.isArray(value) ? value : buildLegacyAttention(source);
+
+  return raw
+    .map((item) => {
+      if (typeof item === "string") {
+        const text = cleanText(item);
+        return text
+          ? {
+              ponto: text,
+              categoria: "outro" as const,
+              relevancia: "media" as const,
+              explorabilidade: "media" as const,
+              necessita_validacao_humana: false,
+              justificativa: text
+            }
+          : null;
+      }
+
+      if (!isRecord(item)) return null;
+
+      const titulo = pickFirstText(item, ["ponto", "titulo", "item", "nome", "achado"]);
+      const justificativa = pickFirstText(item, ["justificativa", "explicacao", "observacao", "detalhe"]);
+
+      if (!titulo && !justificativa) return null;
+
+      return {
+        ponto: titulo || justificativa,
+        categoria: normalizeCategoria(item.categoria),
+        relevancia: normalizeRelevancia(item.relevancia ?? item.prioridade ?? item.severidade),
+        explorabilidade: normalizeExplorabilidade(item.explorabilidade ?? item.prioridade),
+        necessita_validacao_humana: toBoolean(item.necessita_validacao_humana),
+        justificativa: prudentialText(justificativa || titulo)
+      };
+    })
+    .filter(Boolean) as PreAnalysisReportOutput["pontos_exploraveis_defesa"];
 }
 
 export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysisReportOutput {
@@ -696,14 +837,15 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
       prints_tela: {
         existem: toBoolean(prints.existem),
         compatibilidade_com_plataforma_alegada: prudentialText(prints.compatibilidade_com_plataforma_alegada),
-        ["qualidade_probat\u00f3ria"]: normalizeQualidadePrint(
-          prints["qualidade_probat\u00f3ria"] ?? prints.qualidade_probatoria
-        ),
+        ["qualidade_probat\u00f3ria"]: normalizeQualidadePrint(prints["qualidade_probat\u00f3ria"] ?? prints.qualidade_probatoria),
         sinais_de_edicao_ou_recorte: toStringArray(prints.sinais_de_edicao_ou_recorte),
         pontos_de_atencao: toStringArray(prints.pontos_de_atencao)
       },
       outros_documentos: normalizeOutrosDocumentos(tipoDocumental.outros_documentos)
     },
+    mapa_documental_autor: normalizeMapaDocumental(source.mapa_documental_autor, source),
+    priorizacao_estrategica: normalizePriorizacao(source.priorizacao_estrategica, source),
+    fatos_supervenientes_ou_da_emenda: normalizeFatosSupervenientes(source.fatos_supervenientes_ou_da_emenda),
     suficiencia_probatoria: {
       conclusao: normalizeSuficiencia(suficiencia.conclusao),
       provas_fortes: toStringArray(suficiencia.provas_fortes),

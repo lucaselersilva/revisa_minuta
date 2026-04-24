@@ -50,8 +50,10 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
     const ingestion = ingestions.find((item) => item.case_document_id === document.id) ?? null;
     const documentAnalysis = ingestion ? extractStructuredDocumentAnalysis(ingestion.metadata) : null;
     return [
+      `- ID: ${document.id}`,
       `- Nome: ${document.file_name ?? document.document_type}`,
       `  Tipo: ${document.document_type}`,
+      `  Etapa documental: ${document.stage}`,
       `  Mime: ${document.mime_type ?? "nao informado"}`,
       `  Status da ingestao: ${ingestion?.status ?? "pending"}`,
       `  Parser aplicado: ${ingestion?.parser_type ?? "nao processado"}`,
@@ -71,6 +73,7 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
       }
 
       return [
+        `Documento ID: ${item.document.id}`,
         `Documento: ${item.document.file_name ?? item.document.document_type}`,
         `Tipo inferido: ${documentAnalysis.inferred_document_kind}`,
         `Resumo: ${documentAnalysis.summary}`,
@@ -102,8 +105,10 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
     totalCharacters += truncatedText.length;
     documentBlocks.push(
       [
+        `Documento ID: ${item.document.id}`,
         `Documento: ${item.document.file_name ?? item.document.document_type}`,
         `Tipo: ${item.document.document_type}`,
+        `Etapa documental: ${item.document.stage}`,
         `Mime: ${item.document.mime_type ?? "nao informado"}`,
         "Conteudo:",
         truncatedText
@@ -148,6 +153,10 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
       "",
       "[Inventario documental da fase inicial]",
       ...documentInventory,
+      "",
+      "[Orientacao de rastreabilidade]",
+      "Ao citar um documento no laudo, prefira usar o nome do arquivo e, quando disponivel, o Documento ID.",
+      "Se houver peticao inicial, emenda inicial e documentos do autor, diferencie isso explicitamente.",
       "",
       "[Analise documental estruturada]",
       ...(documentAnalysisBlocks.length > 0 ? documentAnalysisBlocks : ["Nenhuma analise estruturada disponivel."]),

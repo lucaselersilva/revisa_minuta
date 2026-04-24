@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  FileText,
-  Loader2,
-  RefreshCw,
-  ScanSearch,
-  ShieldAlert,
-  ShieldCheck
-} from "lucide-react";
+import { FileText, Loader2, RefreshCw, ScanSearch, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -42,9 +35,7 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
   );
 
   const selectedReportJson = useMemo(() => {
-    if (!selectedReport?.report_json) {
-      return null;
-    }
+    if (!selectedReport?.report_json) return null;
 
     try {
       return normalizePreAnalysisReportPayload(selectedReport.report_json);
@@ -85,9 +76,7 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
   }
 
   function runAcknowledge() {
-    if (!latestCompletedReportId) {
-      return;
-    }
+    if (!latestCompletedReportId) return;
 
     startTransition(async () => {
       const result = await acknowledgePreAnalysisReportAction(caseId, latestCompletedReportId);
@@ -147,73 +136,57 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
         <Card>
           <CardHeader>
             <CardTitle>Documentos e processamento</CardTitle>
-            <CardDescription>Arquivos suportados, sem OCR nesta fase.</CardDescription>
+            <CardDescription>Arquivos suportados e leitura disponivel nesta etapa.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {snapshot?.eligibleDocuments.length ? (
-              snapshot.eligibleDocuments.map((item) => (
-                <div key={item.document.id} className="rounded-lg border bg-white p-4">
-                  {(() => {
-                    const documentAnalysis = item.ingestion ? extractStructuredDocumentAnalysis(item.ingestion.metadata) : null;
-                    const analysisStatus = item.ingestion ? getDocumentAnalysisStatus(item.ingestion.metadata) : null;
+              snapshot.eligibleDocuments.map((item) => {
+                const documentAnalysis = item.ingestion ? extractStructuredDocumentAnalysis(item.ingestion.metadata) : null;
+                const analysisStatus = item.ingestion ? getDocumentAnalysisStatus(item.ingestion.metadata) : null;
 
-                    return (
-                      <>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="font-semibold">{item.document.file_name ?? "Documento sem nome"}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {documentTypeLabels[item.document.document_type]} - {item.document.mime_type ?? "mime desconhecido"}
-                            </p>
-                            {item.ingestion?.parser_type ? (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Parser: {formatParserType(item.ingestion.parser_type)}
-                                {item.ingestion.extracted_text_length ? ` - ${item.ingestion.extracted_text_length} caracteres` : ""}
-                              </p>
-                            ) : null}
-                          </div>
-                          <Badge variant={statusVariant(item.ingestion?.status ?? "pending")}>
-                            {item.ingestion?.status ?? "pending"}
+                return (
+                  <div key={item.document.id} className="rounded-lg border bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-semibold">{item.document.file_name ?? "Documento sem nome"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.document.id} - {documentTypeLabels[item.document.document_type]} - {item.document.mime_type ?? "mime desconhecido"}
+                        </p>
+                        {item.ingestion?.parser_type ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Parser: {formatParserType(item.ingestion.parser_type)}
+                            {item.ingestion.extracted_text_length ? ` - ${item.ingestion.extracted_text_length} caracteres` : ""}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Badge variant={statusVariant(item.ingestion?.status ?? "pending")}>
+                        {item.ingestion?.status ?? "pending"}
+                      </Badge>
+                    </div>
+
+                    {documentAnalysis ? (
+                      <div className="mt-3 rounded-md border bg-muted/25 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">{documentAnalysis.inferred_document_kind}</Badge>
+                          <Badge variant={analysisStatus === "completed" ? "success" : "outline"}>
+                            analise {analysisStatus ?? "nao disponivel"}
                           </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            confianca {riskLabel(documentAnalysis.confidence)}
+                          </span>
                         </div>
-                        {documentAnalysis ? (
-                          <div className="mt-3 rounded-md border bg-muted/25 p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary">{documentAnalysis.inferred_document_kind}</Badge>
-                              <Badge variant={analysisStatus === "completed" ? "success" : "outline"}>
-                                analise {analysisStatus ?? "nao disponivel"}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                confianca {riskLabel(documentAnalysis.confidence)}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-sm leading-6">{documentAnalysis.summary}</p>
-                            {documentAnalysis.key_findings.length ? (
-                              <ul className="mt-3 space-y-2 text-sm">
-                                {documentAnalysis.key_findings.slice(0, 3).map((finding) => (
-                                  <li key={`${finding.title}-${finding.evidence}`} className="rounded-md bg-white px-3 py-2">
-                                    <span className="font-medium">{finding.title}</span> [{riskLabel(finding.severity)}] -{" "}
-                                    {finding.evidence}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </div>
-                        ) : analysisStatus === "failed" ? (
-                          <p className="mt-3 text-xs text-destructive">
-                            Analise estruturada falhou: {String(item.ingestion?.metadata.analysis_error_message ?? "sem detalhe")}
-                          </p>
-                        ) : null}
-                        {item.ingestion?.error_message ? (
-                          <p className="mt-3 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm">
-                            {item.ingestion.error_message}
-                          </p>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                </div>
-              ))
+                        <p className="mt-2 text-sm leading-6">{documentAnalysis.summary}</p>
+                      </div>
+                    ) : null}
+
+                    {item.ingestion?.error_message ? (
+                      <p className="mt-3 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm">
+                        {item.ingestion.error_message}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })
             ) : (
               <EmptyState
                 icon={FileText}
@@ -225,7 +198,7 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
+      <div className="grid gap-4 xl:grid-cols-[0.76fr_1.24fr]">
         <Card>
           <CardHeader>
             <CardTitle>Versoes do laudo</CardTitle>
@@ -292,11 +265,7 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
               <PreAnalysisReportView report={selectedReportJson} snapshot={snapshot} markdown={selectedReport.report_markdown} />
             ) : selectedReport?.status === "failed" ? (
               <div className="space-y-4">
-                <EmptyState
-                  icon={ShieldAlert}
-                  title="Geracao falhou"
-                  description="Revise o motivo abaixo, ajuste o contexto se necessario e tente gerar uma nova versao do laudo."
-                />
+                <EmptyState icon={ShieldAlert} title="Geracao falhou" description="Revise o motivo abaixo e tente gerar uma nova versao do laudo." />
                 {selectedReportFailureMessage ? (
                   <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                     <p className="text-sm font-semibold text-destructive">Motivo registrado</p>
@@ -325,31 +294,40 @@ function PreAnalysisReportView({
   snapshot: PreAnalysisSnapshot | null;
   markdown: string | null;
 }) {
+  const prioridadesAltas = report.priorizacao_estrategica.filter((item) => item.prioridade === "urgente" || item.prioridade === "importante");
+
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.08),transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.04),rgba(255,255,255,1))] p-5">
+      <div className="rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.05),rgba(255,255,255,1))] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Pre-analise defensiva</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Painel defensivo</p>
             <p className="max-w-3xl text-sm leading-6 text-slate-700">{report.resumo_executivo}</p>
           </div>
           <Badge variant={suficienciaVariant(report.suficiencia_probatoria.conclusao)}>
             {suficienciaLabel(report.suficiencia_probatoria.conclusao)}
           </Badge>
         </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <QuickChip label="Matriz final" />
+          <QuickChip label="Prioridades" />
+          <QuickChip label="Fatos da emenda" />
+          <QuickChip label="Mapa documental" />
+          <QuickChip label="Pontos defesa" />
+          <QuickChip label="Docs internos" />
+        </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <Metric label="Suficiencia" value={suficienciaLabel(report.suficiencia_probatoria.conclusao)} />
         <Metric label="Pontos defesa" value={String(report.pontos_exploraveis_defesa.length)} />
-        <Metric label="Eventos" value={String(report.cronologia.eventos_identificados.length)} />
+        <Metric label="Prioridades" value={String(report.priorizacao_estrategica.length)} />
+        <Metric label="Fatos emenda" value={String(report.fatos_supervenientes_ou_da_emenda.length)} />
         <Metric label="Docs processados" value={String(snapshot?.metrics.processedCount ?? 0)} />
       </div>
 
-      <ReportSection
-        title="Matriz final de confronto"
-        emphasis
-        content={
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <SectionCard title="Matriz final de confronto" emphasis>
           <div className="grid gap-3 lg:grid-cols-2">
             <SoftPanel title="O que o autor narra">
               <StringList items={report.matriz_final_confronto.o_que_autor_narra} />
@@ -364,378 +342,332 @@ function PreAnalysisReportView({
               <StringList items={report.matriz_final_confronto.o_que_pode_ser_explorado_pela_defesa} />
             </SoftPanel>
           </div>
-        }
-      />
+        </SectionCard>
 
-      <AccordionCard
-        title="Narrativa x documentos"
-        summary={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.justificativa}
-        defaultOpen
-      >
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Narrativa">
+        <SectionCard title="Prioridades operacionais" description="O que merece enfrentamento mais rapido pela defesa.">
+          {prioridadesAltas.length ? (
             <div className="space-y-3">
-              <ConclusionBadgeRow
-                label="Documentos embasam a narrativa"
-                badge={<ConclusionBadge value={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.conclusao} />}
-              />
-              <p className="text-sm leading-6 text-slate-700">
-                {report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.justificativa}
-              </p>
-              <LabelledList
-                title="Pontos fortes"
-                items={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.pontos_fortes}
-              />
-              <LabelledList title="Lacunas" items={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.lacunas} />
-            </div>
-          </SoftPanel>
-
-          <SoftPanel title="Pedidos">
-            <div className="space-y-3">
-              <ConclusionBadgeRow
-                label="Documentos embasam os pedidos"
-                badge={<ConclusionBadge value={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.conclusao} />}
-              />
-              <p className="text-sm leading-6 text-slate-700">
-                {report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.justificativa}
-              </p>
-              <LabelledList
-                title="Pedidos sustentados"
-                items={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_sustentados}
-              />
-              <LabelledList
-                title="Pedidos nao sustentados ou fracos"
-                items={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_nao_sustentados_ou_fracos}
-              />
-            </div>
-          </SoftPanel>
-        </div>
-      </AccordionCard>
-
-      <AccordionCard title="Pontos exploraveis para defesa" summary="Achados objetivos com foco em relevancia e explorabilidade." defaultOpen>
-        <div className="space-y-3">
-          {report.pontos_exploraveis_defesa.length ? (
-            report.pontos_exploraveis_defesa.map((item) => (
-              <div key={`${item.ponto}-${item.justificativa}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-2">
-                    <p className="font-semibold text-slate-900">{item.ponto}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">{categoriaLabel(item.categoria)}</Badge>
-                      <RelevanciaBadge value={item.relevancia} />
-                      <ExplorabilidadeBadge value={item.explorabilidade} />
-                      {item.necessita_validacao_humana ? <Badge variant="outline">validacao humana</Badge> : null}
-                    </div>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-slate-700">{item.justificativa}</p>
-              </div>
-            ))
-          ) : (
-            <NeutralState message="Nenhum ponto estruturado foi retornado nesta versao do laudo." />
-          )}
-        </div>
-      </AccordionCard>
-
-      <AccordionCard title="Suficiencia probatoria" summary={report.suficiencia_probatoria.observacoes} defaultOpen>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Leitura geral">
-            <div className="space-y-3">
-              <Badge variant={suficienciaVariant(report.suficiencia_probatoria.conclusao)}>
-                {suficienciaLabel(report.suficiencia_probatoria.conclusao)}
-              </Badge>
-              <p className="text-sm leading-6 text-slate-700">{report.suficiencia_probatoria.observacoes}</p>
-            </div>
-          </SoftPanel>
-          <SoftPanel title="Base probatoria">
-            <LabelledList title="Provas fortes" items={report.suficiencia_probatoria.provas_fortes} />
-            <LabelledList
-              title="Provas fracas ou unilaterais"
-              items={report.suficiencia_probatoria.provas_fracas_ou_unilaterais}
-            />
-            <LabelledList
-              title="Documentos-chave ausentes"
-              items={report.suficiencia_probatoria.documentos_chave_ausentes}
-            />
-          </SoftPanel>
-        </div>
-      </AccordionCard>
-
-      <AccordionCard title="Cronologia" summary="Linha do tempo consolidada a partir dos documentos disponiveis." defaultOpen>
-        <div className="space-y-3">
-          {report.cronologia.eventos_identificados.length ? (
-            report.cronologia.eventos_identificados.map((item, index) => (
-              <div key={`${item.data}-${item.evento}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-slate-900">{item.evento}</p>
-                  <Badge variant="outline">{item.data ?? "data nao identificada"}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">Fonte: {item.fonte_documental ?? "nao informada"}</p>
-                <p className="mt-1 text-sm leading-6 text-slate-700">{item.observacao}</p>
-              </div>
-            ))
-          ) : (
-            <NeutralState message="Nenhum evento temporal estruturado foi identificado." />
-          )}
-
-          <div className="grid gap-3 lg:grid-cols-2">
-            <SoftPanel title="Inconsistencias temporais">
-              <StringList items={report.cronologia.inconsistencias_temporais} />
-            </SoftPanel>
-            <SoftPanel title="Eventos sem prova temporal">
-              <StringList items={report.cronologia.eventos_sem_prova_temporal} />
-            </SoftPanel>
-          </div>
-        </div>
-      </AccordionCard>
-
-      <AccordionCard title="Analise por tipo documental" summary="Leitura tecnica resumida por categoria documental.">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <DocumentTypePanel title="Procuracao">
-            <BooleanLine label="Existe" value={report.analise_por_tipo_documental.procuracao.existe} />
-            <TextLine label="Regularidade formal" value={report.analise_por_tipo_documental.procuracao.regularidade_formal} />
-            <TextLine
-              label="Assinatura e compatibilidade"
-              value={assinaturaLabel(report.analise_por_tipo_documental.procuracao.assinatura_compatibilidade)}
-            />
-            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.procuracao.pontos_de_atencao} />
-          </DocumentTypePanel>
-
-          <DocumentTypePanel title="Documento de identidade">
-            <BooleanLine label="Existe" value={report.analise_por_tipo_documental.documento_identidade.existe} />
-            <TextLine label="Compatibilidade com a parte" value={report.analise_por_tipo_documental.documento_identidade.compatibilidade_com_parte} />
-            <LabelledList
-              title="Sinais de edicao ou layout incompativel"
-              items={report.analise_por_tipo_documental.documento_identidade.sinais_de_edicao_ou_layout_incompativel}
-            />
-            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.documento_identidade.pontos_de_atencao} />
-          </DocumentTypePanel>
-
-          <DocumentTypePanel title="Comprovante de endereco">
-            <BooleanLine label="Existe" value={report.analise_por_tipo_documental.comprovante_endereco.existe} />
-            <TextLine label="Aderencia ao nome da parte" value={report.analise_por_tipo_documental.comprovante_endereco.aderencia_ao_nome_da_parte} />
-            <TextLine label="Aderencia ao endereco da inicial" value={report.analise_por_tipo_documental.comprovante_endereco.aderencia_ao_endereco_da_inicial} />
-            <LabelledList
-              title="Sinais de edicao ou layout incompativel"
-              items={report.analise_por_tipo_documental.comprovante_endereco.sinais_de_edicao_ou_layout_incompativel}
-            />
-            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.comprovante_endereco.pontos_de_atencao} />
-          </DocumentTypePanel>
-
-          <DocumentTypePanel title="Comprovantes de pagamento">
-            <BooleanLine label="Existem" value={report.analise_por_tipo_documental.comprovantes_pagamento.existem} />
-            <TextLine label="Aderencia ao nome da parte" value={report.analise_por_tipo_documental.comprovantes_pagamento.aderencia_ao_nome_da_parte} />
-            <LabelledList
-              title="Datas e valores identificados"
-              items={report.analise_por_tipo_documental.comprovantes_pagamento.datas_valores_identificados}
-            />
-            <LabelledList
-              title="Sinais de edicao ou layout incompativel"
-              items={report.analise_por_tipo_documental.comprovantes_pagamento.sinais_de_edicao_ou_layout_incompativel}
-            />
-            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.comprovantes_pagamento.pontos_de_atencao} />
-          </DocumentTypePanel>
-
-          <DocumentTypePanel title="Prints de tela">
-            <BooleanLine label="Existem" value={report.analise_por_tipo_documental.prints_tela.existem} />
-            <TextLine
-              label="Compatibilidade com a plataforma alegada"
-              value={report.analise_por_tipo_documental.prints_tela.compatibilidade_com_plataforma_alegada}
-            />
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Qualidade probatoria</p>
-              <Badge variant={qualidadePrintVariant(report.analise_por_tipo_documental.prints_tela["qualidade_probatória"])}>
-                {qualidadePrintLabel(report.analise_por_tipo_documental.prints_tela["qualidade_probatória"])}
-              </Badge>
-            </div>
-            <LabelledList
-              title="Sinais de edicao ou recorte"
-              items={report.analise_por_tipo_documental.prints_tela.sinais_de_edicao_ou_recorte}
-            />
-            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.prints_tela.pontos_de_atencao} />
-          </DocumentTypePanel>
-        </div>
-
-        <SoftPanel title="Outros documentos" className="mt-3">
-          {report.analise_por_tipo_documental.outros_documentos.length ? (
-            <div className="space-y-3">
-              {report.analise_por_tipo_documental.outros_documentos.map((item) => (
-                <div key={`${item.tipo_ou_descricao}-${item.observacoes}`} className="rounded-lg border border-slate-200 bg-white p-3">
+              {prioridadesAltas.map((item) => (
+                <div key={`${item.titulo}-${item.motivo}`} className="rounded-xl border border-slate-200 bg-white p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium text-slate-900">{item.tipo_ou_descricao}</p>
-                    <Badge variant={pesoProbatorioVariant(item.peso_probatorio)}>{pesoProbatorioLabel(item.peso_probatorio)}</Badge>
+                    <p className="font-semibold text-slate-900">{item.titulo}</p>
+                    <Badge variant={prioridadeVariant(item.prioridade)}>{prioridadeLabel(item.prioridade)}</Badge>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.observacoes}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.motivo}</p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    <span className="font-medium text-slate-800">Acao sugerida:</span> {item.acao_sugerida}
+                  </p>
+                  {item.referencia_documental.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {item.referencia_documental.map((ref) => (
+                        <Badge key={ref} variant="outline">
+                          {ref}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
           ) : (
-            <NeutralState message="Nenhum outro documento estruturado foi informado." />
+            <NeutralState message="Nao ha prioridades urgentes ou importantes estruturadas nesta versao." />
           )}
-        </SoftPanel>
-      </AccordionCard>
+        </SectionCard>
+      </div>
 
-      <AccordionCard title="Individualizacao por autor" summary="Separacao de autores, documentos e danos individualizados.">
-        {report.analise_individualizada_por_autor.length ? (
-          <div className="space-y-3">
-            {report.analise_individualizada_por_autor.map((item) => (
-              <SoftPanel key={item.nome_autor} title={item.nome_autor}>
-                <LabelledList title="Documentos vinculados" items={item.documentos_vinculados} />
-                <LabelledList title="Pedidos vinculados" items={item.pedidos_vinculados} />
-                <LabelledList title="Danos individualizados" items={item.danos_individualizados} />
-                <LabelledList title="Lacunas de individualizacao" items={item.lacunas_individualizacao} />
-                <TextLine label="Observacoes" value={item.observacoes} />
-              </SoftPanel>
-            ))}
-          </div>
-        ) : (
-          <NeutralState message="Nao houve individualizacao estruturada por autor nesta versao." />
-        )}
-      </AccordionCard>
-
-      <AccordionCard title="Cadeia negocial" summary="Identificacao objetiva dos polos materiais da relacao.">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Papeis identificados">
-            <IdentityLine label="Quem comprou" value={report.cadeia_negocial.quem_comprou} />
-            <IdentityLine label="Quem pagou" value={report.cadeia_negocial.quem_pagou} />
-            <IdentityLine
-              label="Quem viajou ou seria beneficiario"
-              value={report.cadeia_negocial.quem_viajou_ou_seria_beneficiario}
-            />
-            <IdentityLine
-              label="Quem reclamou ou solicitou suporte"
-              value={report.cadeia_negocial.quem_reclamou_ou_solicitou_suporte}
-            />
-            <IdentityLine
-              label="Quem recebeu ou deveria receber estorno"
-              value={report.cadeia_negocial.quem_recebeu_ou_deveria_receber_estorno}
-            />
+      <details open className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer list-none">
+          <SectionHeader title="Narrativa x documentos" description={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.justificativa} />
+        </summary>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <SoftPanel title="Narrativa">
+            <ConclusionRow label="Documentos embasam a narrativa" value={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.conclusao} />
+            <TextBlock text={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.justificativa} />
+            <LabelledList title="Pontos fortes" items={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.pontos_fortes} />
+            <LabelledList title="Lacunas" items={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.lacunas} />
           </SoftPanel>
-          <SoftPanel title="Divergencias entre pessoas">
-            <StringList items={report.cadeia_negocial.divergencias_entre_pessoas} />
+          <SoftPanel title="Pedidos">
+            <ConclusionRow label="Documentos embasam os pedidos" value={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.conclusao} />
+            <TextBlock text={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.justificativa} />
+            <LabelledList title="Pedidos sustentados" items={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_sustentados} />
+            <LabelledList title="Pedidos nao sustentados ou fracos" items={report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_nao_sustentados_ou_fracos} />
           </SoftPanel>
         </div>
-      </AccordionCard>
+      </details>
 
-      <AccordionCard title="Pedido indenizatorio" summary="Aderencia documental minima aos pedidos economicos e extrapatrimoniais.">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Conclusoes">
-            <ConclusionLine label="Dano material tem prova minima" value={report.pedido_indenizatorio.dano_material_tem_prova_minima} />
-            <ConclusionLine
-              label="Valor pedido tem suporte documental"
-              value={report.pedido_indenizatorio.valor_pedido_tem_suporte_documental}
-            />
-            <ConclusionLine
-              label="Dano moral tem base fatica individualizada"
-              value={report.pedido_indenizatorio.dano_moral_tem_base_fatica_individualizada}
-            />
-          </SoftPanel>
-          <SoftPanel title="Apoio documental">
+      <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
+        <SectionCard title="Fatos supervenientes ou da emenda" description="Alegacoes novas que merecem tratamento proprio.">
+          {report.fatos_supervenientes_ou_da_emenda.length ? (
+            <div className="space-y-3">
+              {report.fatos_supervenientes_ou_da_emenda.map((item) => (
+                <div key={`${item.descricao}-${item.impacto_para_defesa}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-slate-900">{item.descricao}</p>
+                    <Badge variant={item.exige_enfrentamento_especifico ? "destructive" : "outline"}>
+                      {item.exige_enfrentamento_especifico ? "enfrentar" : "monitorar"}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.impacto_para_defesa}</p>
+                  <LabelChips items={item.referencia_documental} emptyMessage="Sem referencia documental estruturada." />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <NeutralState message="Nao ha fatos supervenientes ou de emenda estruturados." />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Pontos exploraveis para defesa" description="Mapa objetivo de exploracao defensiva.">
+          {report.pontos_exploraveis_defesa.length ? (
+            <div className="space-y-3">
+              {report.pontos_exploraveis_defesa.map((item) => (
+                <div key={`${item.ponto}-${item.justificativa}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <p className="font-semibold text-slate-900">{item.ponto}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="secondary">{item.categoria.replaceAll("_", " ")}</Badge>
+                      <Badge variant={relevanciaVariant(item.relevancia)}>{relevanciaLabel(item.relevancia)}</Badge>
+                      <Badge variant={explorabilidadeVariant(item.explorabilidade)}>{explorabilidadeLabel(item.explorabilidade)}</Badge>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-slate-700">{item.justificativa}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <NeutralState message="Nenhum ponto exploravel foi estruturado nesta versao." />
+          )}
+        </SectionCard>
+      </div>
+
+      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" open>
+        <summary className="cursor-pointer list-none">
+          <SectionHeader title="Mapa documental do autor" description="Rastreabilidade por documento, com vinculo subjetivo e impacto defensivo." />
+        </summary>
+        <div className="mt-4 space-y-3">
+          {report.mapa_documental_autor.length ? (
+            report.mapa_documental_autor.map((item) => (
+              <div key={`${item.documento_referencia}-${item.tipo_documento}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{item.documento_referencia}</p>
+                    <p className="mt-1 text-sm text-slate-500">{item.tipo_documento}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">{vinculoLabel(item.vinculo_subjetivo)}</Badge>
+                    <Badge variant={pesoProbatorioVariant(item.peso_probatorio)}>{pesoProbatorioLabel(item.peso_probatorio)}</Badge>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <SoftPanel title="Leitura documental">
+                    <InfoLine label="Titular ou emitente" value={item.titular_ou_emitente ?? "Nao identificado"} />
+                    <InfoLine label="Impacto para defesa" value={item.impacto_para_defesa} />
+                    <InfoLine label="Referencia de trecho" value={item.referencia_trecho_ou_contexto ?? "Nao informada"} />
+                  </SoftPanel>
+                  <SoftPanel title="Achados e cautelas">
+                    <LabelledList title="Achados principais" items={item.achados_principais} />
+                    <LabelledList title="Pontos de atencao" items={item.pontos_de_atencao} />
+                  </SoftPanel>
+                </div>
+              </div>
+            ))
+          ) : (
+            <NeutralState message="Nao ha rastreabilidade documental estruturada para esta versao do laudo." />
+          )}
+        </div>
+      </details>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionCard title="Suficiencia probatoria" description={report.suficiencia_probatoria.observacoes}>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={suficienciaVariant(report.suficiencia_probatoria.conclusao)}>
+              {suficienciaLabel(report.suficiencia_probatoria.conclusao)}
+            </Badge>
+          </div>
+          <div className="mt-3 space-y-3">
+            <LabelledList title="Provas fortes" items={report.suficiencia_probatoria.provas_fortes} />
+            <LabelledList title="Provas fracas ou unilaterais" items={report.suficiencia_probatoria.provas_fracas_ou_unilaterais} />
+            <LabelledList title="Documentos-chave ausentes" items={report.suficiencia_probatoria.documentos_chave_ausentes} />
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Pedido indenizatorio" description="Aderencia minima entre pedidos e prova disponivel.">
+          <div className="space-y-3">
+            <ConclusionRow label="Dano material tem prova minima" value={report.pedido_indenizatorio.dano_material_tem_prova_minima} />
+            <ConclusionRow label="Valor pedido tem suporte documental" value={report.pedido_indenizatorio.valor_pedido_tem_suporte_documental} />
+            <ConclusionRow label="Dano moral tem base fatica individualizada" value={report.pedido_indenizatorio.dano_moral_tem_base_fatica_individualizada} />
             <LabelledList title="Despesas extraordinarias comprovadas" items={report.pedido_indenizatorio.despesas_extraordinarias_comprovadas} />
             <LabelledList title="Lacunas" items={report.pedido_indenizatorio.lacunas} />
-          </SoftPanel>
-        </div>
-      </AccordionCard>
+          </div>
+        </SectionCard>
+      </div>
 
-      <AccordionCard title="Compatibilidade canal x documento" summary="Confronto entre o canal alegado e o tipo de prova apresentado.">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Alegacoes e contratacao">
-            <LabelledList title="Alegacoes vs canais comprovados" items={report.compatibilidade_canal_documento.alegacoes_vs_canais_comprovados} />
-            <LabelledList title="Prova de contratacao" items={report.compatibilidade_canal_documento.prova_de_contratacao} />
-            <LabelledList title="Prova de tentativa" items={report.compatibilidade_canal_documento.prova_de_tentativa} />
+      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer list-none">
+          <SectionHeader title="Cronologia, coerencia e individualizacao" description="Bloco de verificacao objetiva do conjunto fatico-documental." />
+        </summary>
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <SoftPanel title="Cronologia">
+            {report.cronologia.eventos_identificados.length ? (
+              <div className="space-y-3">
+                {report.cronologia.eventos_identificados.map((item, index) => (
+                  <div key={`${item.data}-${item.evento}-${index}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="font-medium text-slate-900">{item.evento}</p>
+                    <p className="mt-1 text-sm text-slate-600">{item.data ?? "Data nao identificada"} - {item.fonte_documental ?? "Fonte nao informada"}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">{item.observacao}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <NeutralState message="Nenhum evento cronologico estruturado." />
+            )}
+            <LabelledList title="Inconsistencias temporais" items={report.cronologia.inconsistencias_temporais} />
+            <LabelledList title="Eventos sem prova temporal" items={report.cronologia.eventos_sem_prova_temporal} />
           </SoftPanel>
-          <SoftPanel title="Oferta e material inconclusivo">
-            <LabelledList
-              title="Prova de oferta ou pre-reserva"
-              items={report.compatibilidade_canal_documento.prova_de_oferta_ou_pre_reserva}
-            />
-            <LabelledList
-              title="Mera consulta ou print inconclusivo"
-              items={report.compatibilidade_canal_documento.mera_consulta_ou_print_inconclusivo}
-            />
-          </SoftPanel>
-        </div>
-      </AccordionCard>
 
-      <AccordionCard title="Coerencia, representacao e integridade" summary="Bloco auxiliar para validacao defensiva e cautelas da analise.">
-        <div className="grid gap-3 lg:grid-cols-3">
           <SoftPanel title="Coerencia entre documentos">
             <LabelledList title="Nomes divergentes" items={report.coerencia_entre_documentos.nomes_divergentes} />
             <LabelledList title="Datas divergentes" items={report.coerencia_entre_documentos.datas_divergentes} />
             <LabelledList title="Valores divergentes" items={report.coerencia_entre_documentos.valores_divergentes} />
-            <LabelledList
-              title="Codigos localizadores divergentes"
-              items={report.coerencia_entre_documentos.codigos_localizadores_divergentes}
-            />
-            <LabelledList
-              title="Emails, telefones ou identificadores divergentes"
-              items={report.coerencia_entre_documentos.emails_telefones_ou_identificadores_divergentes}
-            />
-            <TextLine label="Observacoes" value={report.coerencia_entre_documentos.observacoes} />
+            <LabelledList title="Codigos localizadores divergentes" items={report.coerencia_entre_documentos.codigos_localizadores_divergentes} />
+            <LabelledList title="Emails, telefones ou identificadores divergentes" items={report.coerencia_entre_documentos.emails_telefones_ou_identificadores_divergentes} />
+            <TextBlock text={report.coerencia_entre_documentos.observacoes} />
           </SoftPanel>
 
-          <SoftPanel title="Representacao processual">
-            <div className="space-y-2">
-              <Badge variant={regularidadeVariant(report.representacao_processual.regularidade_aparente)}>
-                {regularidadeLabel(report.representacao_processual.regularidade_aparente)}
-              </Badge>
-            </div>
-            <LabelledList title="Pontos de atencao" items={report.representacao_processual.pontos_de_atencao} />
-            <LabelledList
-              title="Autores sem procuracao ou documento"
-              items={report.representacao_processual.autores_sem_procuracao_ou_documento}
-            />
-          </SoftPanel>
-
-          <SoftPanel title="Integridade tecnica dos arquivos">
-            <LabelledList
-              title="Sinais possiveis de manipulacao"
-              items={report.integridade_tecnica_arquivos.sinais_possiveis_de_manipulacao}
-            />
-            <LabelledList
-              title="Limitacoes da analise"
-              items={report.integridade_tecnica_arquivos.limitacoes_da_analise}
-            />
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              Necessita validacao humana: {report.integridade_tecnica_arquivos.necessita_validacao_humana ? "Sim" : "Nao"}
-            </div>
-          </SoftPanel>
-        </div>
-      </AccordionCard>
-
-      <AccordionCard title="Espacialidade e litigancia padronizada" summary="Elementos auxiliares de consistencia territorial e recorrencia interna do caso.">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Espacialidade">
-            <LabelledList title="Cidades e enderecos identificados" items={report.espacialidade.cidades_enderecos_identificados} />
-            <LabelledList title="Inconsistencias territoriais" items={report.espacialidade.inconsistencias_territoriais} />
-            <TextLine label="Observacoes" value={report.espacialidade.observacoes} />
-          </SoftPanel>
-          <SoftPanel title="Indicios de litigancia padronizada">
-            <LabelledList title="Indicios" items={report.indicios_litigancia_padronizada.indicios} />
-            <LabelledList title="Elementos recorrentes" items={report.indicios_litigancia_padronizada.elementos_recorrentes} />
-            <TextLine label="Observacoes" value={report.indicios_litigancia_padronizada.observacoes} />
-          </SoftPanel>
-        </div>
-      </AccordionCard>
-
-      <AccordionCard title="Documentos internos recomendados" summary="Materiais internos que podem robustecer a defesa.">
-        <StringList items={report.documentos_internos_recomendados_para_defesa} />
-      </AccordionCard>
-
-      <AccordionCard title="Alertas e limitacoes" summary="Campos de nao conclusao e cautelas tecnicas da leitura.">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <SoftPanel title="Alertas de nao conclusao">
-            <StringList items={report.alertas_de_nao_conclusao} />
-          </SoftPanel>
-          <SoftPanel title="Markdown persistido">
-            {markdown ? (
-              <pre className="whitespace-pre-wrap text-xs leading-6 text-slate-600">{markdown}</pre>
+          <SoftPanel title="Individualizacao por autor">
+            {report.analise_individualizada_por_autor.length ? (
+              <div className="space-y-3">
+                {report.analise_individualizada_por_autor.map((item) => (
+                  <div key={item.nome_autor} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="font-medium text-slate-900">{item.nome_autor}</p>
+                    <LabelledList title="Documentos vinculados" items={item.documentos_vinculados} />
+                    <LabelledList title="Pedidos vinculados" items={item.pedidos_vinculados} />
+                    <LabelledList title="Danos individualizados" items={item.danos_individualizados} />
+                    <LabelledList title="Lacunas de individualizacao" items={item.lacunas_individualizacao} />
+                  </div>
+                ))}
+              </div>
             ) : (
-              <NeutralState message="Nao ha markdown persistido para esta versao." />
+              <NeutralState message="Nao houve individualizacao estruturada por autor." />
             )}
           </SoftPanel>
         </div>
-      </AccordionCard>
+      </details>
+
+      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer list-none">
+          <SectionHeader title="Analise por tipo documental" description="Leitura tecnica dos tipos documentais principais." />
+        </summary>
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <SoftPanel title="Procuracao">
+            <InfoLine label="Existe" value={report.analise_por_tipo_documental.procuracao.existe ? "Sim" : "Nao"} />
+            <InfoLine label="Regularidade formal" value={report.analise_por_tipo_documental.procuracao.regularidade_formal} />
+            <InfoLine label="Assinatura e compatibilidade" value={assinaturaLabel(report.analise_por_tipo_documental.procuracao.assinatura_compatibilidade)} />
+            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.procuracao.pontos_de_atencao} />
+          </SoftPanel>
+          <SoftPanel title="Documento de identidade">
+            <InfoLine label="Existe" value={report.analise_por_tipo_documental.documento_identidade.existe ? "Sim" : "Nao"} />
+            <InfoLine label="Compatibilidade com a parte" value={report.analise_por_tipo_documental.documento_identidade.compatibilidade_com_parte} />
+            <LabelledList title="Sinais de edicao ou layout incompativel" items={report.analise_por_tipo_documental.documento_identidade.sinais_de_edicao_ou_layout_incompativel} />
+            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.documento_identidade.pontos_de_atencao} />
+          </SoftPanel>
+          <SoftPanel title="Comprovante de endereco">
+            <InfoLine label="Existe" value={report.analise_por_tipo_documental.comprovante_endereco.existe ? "Sim" : "Nao"} />
+            <InfoLine label="Aderencia ao nome da parte" value={report.analise_por_tipo_documental.comprovante_endereco.aderencia_ao_nome_da_parte} />
+            <InfoLine label="Aderencia ao endereco da inicial" value={report.analise_por_tipo_documental.comprovante_endereco.aderencia_ao_endereco_da_inicial} />
+            <LabelledList title="Sinais de edicao ou layout incompativel" items={report.analise_por_tipo_documental.comprovante_endereco.sinais_de_edicao_ou_layout_incompativel} />
+            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.comprovante_endereco.pontos_de_atencao} />
+          </SoftPanel>
+          <SoftPanel title="Comprovantes de pagamento">
+            <InfoLine label="Existem" value={report.analise_por_tipo_documental.comprovantes_pagamento.existem ? "Sim" : "Nao"} />
+            <InfoLine label="Aderencia ao nome da parte" value={report.analise_por_tipo_documental.comprovantes_pagamento.aderencia_ao_nome_da_parte} />
+            <LabelledList title="Datas e valores identificados" items={report.analise_por_tipo_documental.comprovantes_pagamento.datas_valores_identificados} />
+            <LabelledList title="Sinais de edicao ou layout incompativel" items={report.analise_por_tipo_documental.comprovantes_pagamento.sinais_de_edicao_ou_layout_incompativel} />
+            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.comprovantes_pagamento.pontos_de_atencao} />
+          </SoftPanel>
+          <SoftPanel title="Prints de tela">
+            <InfoLine label="Existem" value={report.analise_por_tipo_documental.prints_tela.existem ? "Sim" : "Nao"} />
+            <InfoLine label="Compatibilidade com a plataforma alegada" value={report.analise_por_tipo_documental.prints_tela.compatibilidade_com_plataforma_alegada} />
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={qualidadePrintVariant(report.analise_por_tipo_documental.prints_tela["qualidade_probat\u00f3ria"])}>
+                {qualidadePrintLabel(report.analise_por_tipo_documental.prints_tela["qualidade_probat\u00f3ria"])}
+              </Badge>
+            </div>
+            <LabelledList title="Sinais de edicao ou recorte" items={report.analise_por_tipo_documental.prints_tela.sinais_de_edicao_ou_recorte} />
+            <LabelledList title="Pontos de atencao" items={report.analise_por_tipo_documental.prints_tela.pontos_de_atencao} />
+          </SoftPanel>
+          <SoftPanel title="Outros documentos">
+            {report.analise_por_tipo_documental.outros_documentos.length ? (
+              <div className="space-y-3">
+                {report.analise_por_tipo_documental.outros_documentos.map((item) => (
+                  <div key={`${item.tipo_ou_descricao}-${item.observacoes}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{item.tipo_ou_descricao}</p>
+                      <Badge variant={pesoProbatorioVariant(item.peso_probatorio)}>{pesoProbatorioLabel(item.peso_probatorio)}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">{item.observacoes}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <NeutralState message="Nenhum outro documento estruturado foi informado." />
+            )}
+          </SoftPanel>
+        </div>
+      </details>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionCard title="Cadeia negocial e canal documental" description="Quem aparece materialmente na relacao e quais canais tem prova.">
+          <InfoLine label="Quem comprou" value={report.cadeia_negocial.quem_comprou ?? "Nao identificado"} />
+          <InfoLine label="Quem pagou" value={report.cadeia_negocial.quem_pagou ?? "Nao identificado"} />
+          <InfoLine label="Quem viajou ou seria beneficiario" value={report.cadeia_negocial.quem_viajou_ou_seria_beneficiario ?? "Nao identificado"} />
+          <InfoLine label="Quem reclamou ou solicitou suporte" value={report.cadeia_negocial.quem_reclamou_ou_solicitou_suporte ?? "Nao identificado"} />
+          <InfoLine label="Quem recebeu ou deveria receber estorno" value={report.cadeia_negocial.quem_recebeu_ou_deveria_receber_estorno ?? "Nao identificado"} />
+          <LabelledList title="Divergencias entre pessoas" items={report.cadeia_negocial.divergencias_entre_pessoas} />
+          <LabelledList title="Alegacoes vs canais comprovados" items={report.compatibilidade_canal_documento.alegacoes_vs_canais_comprovados} />
+          <LabelledList title="Prova de contratacao" items={report.compatibilidade_canal_documento.prova_de_contratacao} />
+          <LabelledList title="Prova de tentativa" items={report.compatibilidade_canal_documento.prova_de_tentativa} />
+        </SectionCard>
+
+        <SectionCard title="Representacao, espacialidade e integridade" description="Riscos auxiliares de consistencia processual e tecnica.">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={regularidadeVariant(report.representacao_processual.regularidade_aparente)}>
+              {regularidadeLabel(report.representacao_processual.regularidade_aparente)}
+            </Badge>
+          </div>
+          <LabelledList title="Pontos de atencao da representacao" items={report.representacao_processual.pontos_de_atencao} />
+          <LabelledList title="Autores sem procuracao ou documento" items={report.representacao_processual.autores_sem_procuracao_ou_documento} />
+          <LabelledList title="Cidades e enderecos identificados" items={report.espacialidade.cidades_enderecos_identificados} />
+          <LabelledList title="Inconsistencias territoriais" items={report.espacialidade.inconsistencias_territoriais} />
+          <LabelledList title="Sinais possiveis de manipulacao" items={report.integridade_tecnica_arquivos.sinais_possiveis_de_manipulacao} />
+          <LabelledList title="Limitacoes da analise" items={report.integridade_tecnica_arquivos.limitacoes_da_analise} />
+        </SectionCard>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionCard title="Documentos internos recomendados" description="Materiais internos que podem robustecer a defesa.">
+          <StringList items={report.documentos_internos_recomendados_para_defesa} />
+        </SectionCard>
+        <SectionCard title="Alertas e nao conclusao" description="Campos prudenciais e pontos dependentes de validacao humana.">
+          <StringList items={report.alertas_de_nao_conclusao} />
+          <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            Necessita validacao humana: {report.integridade_tecnica_arquivos.necessita_validacao_humana ? "Sim" : "Nao"}
+          </p>
+        </SectionCard>
+      </div>
+
+      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer list-none">
+          <SectionHeader title="Markdown persistido" description="Representacao textual salva do laudo atual." />
+        </summary>
+        <div className="mt-4">
+          {markdown ? (
+            <pre className="whitespace-pre-wrap text-xs leading-6 text-slate-600">{markdown}</pre>
+          ) : (
+            <NeutralState message="Nao ha markdown persistido para esta versao." />
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -749,62 +681,52 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ReportSection({ title, content, emphasis = false }: { title: string; content: ReactNode; emphasis?: boolean }) {
+function SectionCard({
+  title,
+  description,
+  children,
+  emphasis = false
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  emphasis?: boolean;
+}) {
   return (
     <div
       className={cn(
-        "rounded-2xl border p-4",
+        "rounded-2xl border p-4 shadow-sm",
         emphasis
-          ? "border-slate-300 bg-[linear-gradient(135deg,rgba(241,245,249,1),rgba(255,255,255,1))] shadow-sm"
+          ? "border-slate-300 bg-[linear-gradient(135deg,rgba(241,245,249,1),rgba(255,255,255,1))]"
           : "border-slate-200 bg-white"
       )}
     >
-      <p className="mb-3 text-base font-semibold text-slate-900">{title}</p>
-      {content}
+      <SectionHeader title={title} description={description} />
+      <div className="mt-4 space-y-3">{children}</div>
     </div>
   );
 }
 
-function AccordionCard({
-  title,
-  summary,
-  children,
-  defaultOpen = false
-}: {
-  title: string;
-  summary: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-}) {
+function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <details open={defaultOpen} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <summary className="cursor-pointer list-none">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="font-semibold text-slate-900">{title}</p>
-            <p className="mt-1 text-sm leading-6 text-slate-500">{summary}</p>
-          </div>
-          <Badge variant="outline" className="group-open:bg-slate-100">
-            abrir
-          </Badge>
-        </div>
-      </summary>
-      <div className="mt-4 space-y-3">{children}</div>
-    </details>
+    <div>
+      <p className="font-semibold text-slate-900">{title}</p>
+      {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+    </div>
   );
 }
 
-function SoftPanel({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+function SoftPanel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className={cn("rounded-xl border border-slate-200 bg-slate-50/70 p-4", className)}>
+    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
       <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{title}</p>
       <div className="space-y-3">{children}</div>
     </div>
   );
 }
 
-function DocumentTypePanel({ title, children }: { title: string; children: ReactNode }) {
-  return <SoftPanel title={title}>{children}</SoftPanel>;
+function QuickChip({ label }: { label: string }) {
+  return <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">{label}</span>;
 }
 
 function StringList({ items }: { items: string[] }) {
@@ -830,6 +752,20 @@ function LabelledList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+function LabelChips({ items, emptyMessage }: { items: string[]; emptyMessage: string }) {
+  return items.length ? (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {items.map((item) => (
+        <Badge key={item} variant="outline">
+          {item}
+        </Badge>
+      ))}
+    </div>
+  ) : (
+    <p className="mt-3 text-sm text-slate-500">{emptyMessage}</p>
+  );
+}
+
 function NeutralState({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-dashed border-slate-300 bg-white/70 px-3 py-3 text-sm text-slate-500">
@@ -838,7 +774,7 @@ function NeutralState({ message }: { message: string }) {
   );
 }
 
-function TextLine({ label, value }: { label: string; value: string }) {
+function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
@@ -847,15 +783,11 @@ function TextLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BooleanLine({ label, value }: { label: string; value: boolean }) {
-  return <TextLine label={label} value={value ? "Sim" : "Nao"} />;
+function TextBlock({ text }: { text: string }) {
+  return <p className="text-sm leading-6 text-slate-700">{text}</p>;
 }
 
-function IdentityLine({ label, value }: { label: string; value: string | null }) {
-  return <TextLine label={label} value={value ?? "Nao foi possivel verificar com os documentos disponiveis."} />;
-}
-
-function ConclusionLine({
+function ConclusionRow({
   label,
   value
 }: {
@@ -865,30 +797,9 @@ function ConclusionLine({
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
       <span className="text-sm text-slate-700">{label}</span>
-      <ConclusionBadge value={value} />
+      <Badge variant={conclusionVariant(value)}>{conclusionLabel(value)}</Badge>
     </div>
   );
-}
-
-function ConclusionBadgeRow({ label, badge }: { label: string; badge: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <span className="text-sm text-slate-700">{label}</span>
-      {badge}
-    </div>
-  );
-}
-
-function ConclusionBadge({ value }: { value: "sim" | "parcialmente" | "nao" | "inconclusivo" }) {
-  return <Badge variant={conclusionVariant(value)}>{conclusionLabel(value)}</Badge>;
-}
-
-function RelevanciaBadge({ value }: { value: "baixa" | "media" | "alta" | "critica" }) {
-  return <Badge variant={relevanciaVariant(value)}>{relevanciaLabel(value)}</Badge>;
-}
-
-function ExplorabilidadeBadge({ value }: { value: "baixa" | "media" | "alta" }) {
-  return <Badge variant={explorabilidadeVariant(value)}>{explorabilidadeLabel(value)}</Badge>;
 }
 
 function riskLabel(value: "low" | "medium" | "high") {
@@ -955,19 +866,33 @@ function assinaturaLabel(value: "compativel" | "incompativel" | "indicio_de_inco
   return "Nao verificavel";
 }
 
-function categoriaLabel(
-  value:
-    | "legitimidade"
-    | "autenticidade"
-    | "dano_material"
-    | "dano_moral"
-    | "nexo_causal"
-    | "representacao"
-    | "prova_insuficiente"
-    | "cronologia"
-    | "outro"
-) {
-  return value.replaceAll("_", " ");
+function pesoProbatorioLabel(value: "forte" | "medio" | "fraco" | "inconclusivo" | "contraditorio") {
+  if (value === "forte") return "PESO FORTE";
+  if (value === "medio") return "PESO MEDIO";
+  if (value === "fraco") return "PESO FRACO";
+  if (value === "contraditorio") return "CONTRADITORIO";
+  return "INCONCLUSIVO";
+}
+
+function pesoProbatorioVariant(value: "forte" | "medio" | "fraco" | "inconclusivo" | "contraditorio") {
+  if (value === "forte") return "success";
+  if (value === "medio") return "outline";
+  if (value === "fraco" || value === "contraditorio") return "destructive";
+  return "secondary";
+}
+
+function prioridadeLabel(value: "urgente" | "importante" | "relevante" | "considerar") {
+  if (value === "urgente") return "URGENTE";
+  if (value === "importante") return "IMPORTANTE";
+  if (value === "relevante") return "RELEVANTE";
+  return "CONSIDERAR";
+}
+
+function prioridadeVariant(value: "urgente" | "importante" | "relevante" | "considerar") {
+  if (value === "urgente") return "destructive";
+  if (value === "importante") return "outline";
+  if (value === "relevante") return "secondary";
+  return "secondary";
 }
 
 function relevanciaLabel(value: "baixa" | "media" | "alta" | "critica") {
@@ -1010,17 +935,9 @@ function regularidadeVariant(value: "regular" | "parcial" | "irregular" | "incon
   return "secondary";
 }
 
-function pesoProbatorioLabel(value: "forte" | "medio" | "fraco" | "inconclusivo" | "contraditorio") {
-  if (value === "forte") return "PESO FORTE";
-  if (value === "medio") return "PESO MEDIO";
-  if (value === "fraco") return "PESO FRACO";
-  if (value === "contraditorio") return "CONTRADITORIO";
-  return "INCONCLUSIVO";
-}
-
-function pesoProbatorioVariant(value: "forte" | "medio" | "fraco" | "inconclusivo" | "contraditorio") {
-  if (value === "forte") return "success";
-  if (value === "medio") return "outline";
-  if (value === "fraco" || value === "contraditorio") return "destructive";
-  return "secondary";
+function vinculoLabel(value: "autor_direto" | "terceiro" | "nao_identificado" | "divergente") {
+  if (value === "autor_direto") return "Autor direto";
+  if (value === "terceiro") return "Terceiro";
+  if (value === "divergente") return "Divergente";
+  return "Nao identificado";
 }

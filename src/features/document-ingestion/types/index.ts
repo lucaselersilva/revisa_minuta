@@ -1,5 +1,8 @@
 import type {
+  AuthorExternalProcess,
+  AuthorExternalSearch,
   CaseDocument,
+  CaseParty,
   DocumentIngestion,
   PreAnalysisAcknowledgement,
   PreAnalysisReport,
@@ -52,6 +55,11 @@ export type CaseDocumentIngestionItem = {
   ingestion: DocumentIngestion | null;
 };
 
+export type AuthorExternalSearchItem = AuthorExternalSearch & {
+  party: Pick<CaseParty, "id" | "name" | "role" | "document"> | null;
+  processes: AuthorExternalProcess[];
+};
+
 export type PreAnalysisSnapshot = {
   eligibleDocuments: CaseDocumentIngestionItem[];
   latestCompletedReport: (PreAnalysisReport & { generated_profile: Pick<Profile, "id" | "full_name"> | null }) | null;
@@ -77,6 +85,18 @@ export type PreAnalysisSnapshot = {
     emptyTextCount: number;
     pendingCount: number;
     totalExtractedCharacters: number;
+  };
+  externalAuthorSearches: AuthorExternalSearchItem[];
+  externalAuthorSearchMetrics: {
+    configured: boolean;
+    authorCount: number;
+    searchesCount: number;
+    pendingCount: number;
+    completedCount: number;
+    failedCount: number;
+    identifiedCpfCount: number;
+    processCount: number;
+    lastRequestedAt: string | null;
   };
   canGenerateReport: boolean;
   generationRequirements: string[];

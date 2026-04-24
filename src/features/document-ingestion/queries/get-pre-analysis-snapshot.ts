@@ -3,6 +3,8 @@ import { isPreAnalysisEligibleDocumentType } from "@/features/document-ingestion
 import type { PreAnalysisSnapshot } from "@/features/document-ingestion/types";
 import { createClient } from "@/lib/supabase/server";
 import type {
+  AuthorExternalProcess,
+  AuthorExternalSearch,
   DocumentIngestion,
   PreAnalysisAcknowledgement,
   PreAnalysisReport,
@@ -17,7 +19,7 @@ export async function getPreAnalysisSnapshot(caseId: string): Promise<PreAnalysi
     return null;
   }
 
-  const [ingestionsResult, reportsResult, acknowledgementsResult] = await Promise.all([
+  const [ingestionsResult, reportsResult, acknowledgementsResult, externalSearchesResult, externalProcessesResult] = await Promise.all([
     supabase.from("AA_document_ingestions").select("*").returns<DocumentIngestion[]>(),
     supabase
       .from("AA_pre_analysis_reports")
@@ -30,7 +32,19 @@ export async function getPreAnalysisSnapshot(caseId: string): Promise<PreAnalysi
       .select("*, acknowledger:AA_profiles!AA_pre_analysis_acknowledgements_acknowledged_by_fkey(id, full_name)")
       .eq("case_id", caseId)
       .order("acknowledged_at", { ascending: false })
-      .returns<Array<PreAnalysisAcknowledgement & { acknowledger: Pick<Profile, "id" | "full_name"> | null }>>()
+      .returns<Array<PreAnalysisAcknowledgement & { acknowledger: Pick<Profile, "id" | "full_name"> | null }>>(),
+    supabase
+      .from("AA_author_external_searches")
+      .select("*")
+      .eq("case_id", caseId)
+      .order("requested_at", { ascending: false })
+      .returns<AuthorExternalSearch[]>(),
+    supabase
+      .from("AA_author_external_processes")
+      .select("*")
+      .eq("case_id", caseId)
+      .order("created_at", { ascending: false })
+      .returns<AuthorExternalProcess[]>()
   ]);
 
   const ingestions = (ingestionsResult.data ?? []).filter((item) =>
@@ -38,6 +52,8 @@ export async function getPreAnalysisSnapshot(caseId: string): Promise<PreAnalysi
   );
   const reports = reportsResult.data ?? [];
   const acknowledgements = acknowledgementsResult.data ?? [];
+  const externalSearches = externalSearchesResult.data ?? [];
+  const externalProcesses = externalProcessesResult.data ?? [];
   const eligibleDocuments = caseItem.documents
     .filter((document) => isPreAnalysisEligibleDocumentType(document.document_type))
     .map((document) => ({
@@ -49,6 +65,12 @@ export async function getPreAnalysisSnapshot(caseId: string): Promise<PreAnalysi
   const latestAcknowledgementForLatestReport = latestCompletedReport
     ? acknowledgements.find((ack) => ack.report_id === latestCompletedReport.id) ?? null
     : null;
+  const externalAuthorSearches = externalSearches.map((search) => ({
+    ...search,
+    party:
+      caseItem.parties.find((party) => party.id === search.party_id) ?? null,
+    processes: externalProcesses.filter((process) => process.search_id === search.id)
+  }));
   const metrics = {
     eligibleCount: eligibleDocuments.length,
     processedCount: eligibleDocuments.filter((item) => item.ingestion?.status === "processed").length,
@@ -68,6 +90,18 @@ export async function getPreAnalysisSnapshot(caseId: string): Promise<PreAnalysi
     generationRequirements.push("Processe documentos com texto extraivel antes de gerar o laudo.");
   }
 
+  const externalAuthorSearchMetrics = {
+    configured: Boolean(process.env.ESCAVADOR_API_TOKEN?.trim()),
+    authorCount: caseItem.parties.filter((party) => party.role === "author").length,
+    searchesCount: externalAuthorSearches.length,
+    pendingCount: externalAuthorSearches.filter((item) => item.status === "pending").length,
+    completedCount: externalAuthorSearches.filter((item) => item.status === "completed").length,
+    failedCount: externalAuthorSearches.filter((item) => item.status === "failed").length,
+    identifiedCpfCount: new Set(externalAuthorSearches.map((item) => item.cpf).filter(Boolean)).size,
+    processCount: externalProcesses.length,
+    lastRequestedAt: externalAuthorSearches[0]?.requested_at ?? null
+  };
+
   return {
     eligibleDocuments,
     latestCompletedReport,
@@ -76,6 +110,8 @@ export async function getPreAnalysisSnapshot(caseId: string): Promise<PreAnalysi
     acknowledgements,
     latestAcknowledgementForLatestReport,
     metrics,
+    externalAuthorSearches,
+    externalAuthorSearchMetrics,
     canGenerateReport: generationRequirements.length === 0,
     generationRequirements
   };

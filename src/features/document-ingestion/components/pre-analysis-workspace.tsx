@@ -5,7 +5,12 @@ import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { acknowledgePreAnalysisReportAction, generatePreAnalysisReportAction } from "@/features/ai/actions/pre-analysis-actions";
+import {
+  acknowledgePreAnalysisReportAction,
+  generatePreAnalysisReportAction,
+  refreshAuthorExternalSearchesAction,
+  requestAuthorExternalSearchesAction
+} from "@/features/ai/actions/pre-analysis-actions";
 import { normalizePreAnalysisReportPayload, type PreAnalysisReportOutput } from "@/features/ai/types/pre-analysis-report";
 import { processCaseInitialDocumentsAction } from "@/features/document-ingestion/actions/document-ingestion-actions";
 import { extractStructuredDocumentAnalysis, getDocumentAnalysisStatus } from "@/features/document-ingestion/lib/document-analysis-helpers";
@@ -80,6 +85,30 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
 
     startTransition(async () => {
       const result = await acknowledgePreAnalysisReportAction(caseId, latestCompletedReportId);
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function runRequestExternalSearches() {
+    startTransition(async () => {
+      const result = await requestAuthorExternalSearchesAction(caseId);
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function runRefreshExternalSearches() {
+    startTransition(async () => {
+      const result = await refreshAuthorExternalSearchesAction(caseId);
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
@@ -198,6 +227,13 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
         </Card>
       </div>
 
+      <AuthorExternalSearchPanel
+        snapshot={snapshot}
+        isPending={isPending}
+        onRequest={runRequestExternalSearches}
+        onRefresh={runRefreshExternalSearches}
+      />
+
       <div className="grid gap-4 xl:grid-cols-[0.76fr_1.24fr]">
         <Card>
           <CardHeader>
@@ -282,6 +318,136 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
         </Card>
       </div>
     </div>
+  );
+}
+
+function AuthorExternalSearchPanel({
+  snapshot,
+  isPending,
+  onRequest,
+  onRefresh
+}: {
+  snapshot: PreAnalysisSnapshot | null;
+  isPending: boolean;
+  onRequest: () => void;
+  onRefresh: () => void;
+}) {
+  const metrics = snapshot?.externalAuthorSearchMetrics;
+
+  return (
+    <Card className="border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,1)_0%,rgba(248,250,252,1)_100%)]">
+      <CardHeader>
+        <CardTitle>Consulta externa de autores</CardTitle>
+        <CardDescription>
+          Busca complementar de processos por CPF dos autores, com identificacao a partir do cadastro da parte e da peticao inicial.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <Metric label="Autores" value={String(metrics?.authorCount ?? 0)} />
+          <Metric label="CPFs identificados" value={String(metrics?.identifiedCpfCount ?? 0)} />
+          <Metric label="Consultas" value={String(metrics?.searchesCount ?? 0)} />
+          <Metric label="Pendentes" value={String(metrics?.pendingCount ?? 0)} />
+          <Metric label="Concluidas" value={String(metrics?.completedCount ?? 0)} />
+          <Metric label="Processos" value={String(metrics?.processCount ?? 0)} />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" disabled={isPending || !metrics?.configured} onClick={onRequest}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+            Consultar autores
+          </Button>
+          <Button type="button" variant="outline" disabled={isPending || !metrics?.configured} onClick={onRefresh}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Atualizar consultas
+          </Button>
+          {metrics?.lastRequestedAt ? (
+            <Badge variant="outline">ultima solicitacao {new Date(metrics.lastRequestedAt).toLocaleString("pt-BR")}</Badge>
+          ) : null}
+        </div>
+
+        {!metrics?.configured ? (
+          <NeutralState message="Configure ESCAVADOR_API_TOKEN no ambiente para habilitar a consulta externa por CPF." />
+        ) : null}
+
+        {snapshot?.externalAuthorSearches.length ? (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {snapshot.externalAuthorSearches.map((search) => (
+              <div key={search.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{search.party?.name ?? "Autor nao identificado"}</p>
+                    <p className="text-xs text-slate-500">
+                      CPF {search.cpf} • Origem {search.tribunal}
+                    </p>
+                  </div>
+                  <Badge variant={externalSearchStatusVariant(search.status)}>{externalSearchStatusLabel(search.status)}</Badge>
+                </div>
+
+                {search.request_payload?.cpf_source ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant="secondary">fonte {String(search.request_payload.cpf_source)}</Badge>
+                    {search.request_payload?.needs_human_validation ? (
+                      <Badge variant="outline">validacao humana recomendada</Badge>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {search.request_payload?.cpf_reasoning ? (
+                  <p className="mt-3 text-sm leading-6 text-slate-700">{String(search.request_payload.cpf_reasoning)}</p>
+                ) : null}
+
+                {search.error_message ? (
+                  <p className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                    {search.error_message}
+                  </p>
+                ) : null}
+
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Processos encontrados</p>
+                  {search.processes.length ? (
+                    search.processes.map((processItem) => (
+                      <div key={processItem.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-slate-900">{processItem.process_number}</p>
+                          <Badge variant="outline">{processItem.tribunal ?? search.tribunal}</Badge>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">
+                          {processItem.subject_summary ?? "Sem assunto estruturado na resposta externa."}
+                        </p>
+                        {processItem.last_movement_at ? (
+                          <p className="mt-2 text-xs text-slate-500">ultima referencia: {processItem.last_movement_at}</p>
+                        ) : null}
+                        {processItem.source_link ? (
+                          <a
+                            href={processItem.source_link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-flex text-sm font-medium text-sky-700 hover:text-sky-800"
+                          >
+                            Abrir referencia externa
+                          </a>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <NeutralState
+                      message={
+                        search.status === "not_found"
+                          ? "A consulta foi concluida sem processos retornados para este CPF nesta origem."
+                          : "Nenhum processo persistido para esta consulta ate o momento."
+                      }
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <NeutralState message="Nenhuma consulta externa foi iniciada para este caso. O restante da pre-analise continua funcionando sem dependencia deste bloco." />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -940,4 +1106,18 @@ function vinculoLabel(value: "autor_direto" | "terceiro" | "nao_identificado" | 
   if (value === "terceiro") return "Terceiro";
   if (value === "divergente") return "Divergente";
   return "Nao identificado";
+}
+
+function externalSearchStatusLabel(value: "pending" | "completed" | "failed" | "not_found") {
+  if (value === "pending") return "PENDENTE";
+  if (value === "completed") return "CONCLUIDA";
+  if (value === "not_found") return "SEM RESULTADO";
+  return "FALHA";
+}
+
+function externalSearchStatusVariant(value: "pending" | "completed" | "failed" | "not_found") {
+  if (value === "completed") return "success";
+  if (value === "failed") return "destructive";
+  if (value === "not_found") return "outline";
+  return "secondary";
 }

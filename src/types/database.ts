@@ -22,6 +22,7 @@ export type WorkflowStatus = "not_started" | "in_progress" | "blocked" | "comple
 export type WorkflowStepStatus = "locked" | "available" | "in_progress" | "completed" | "skipped";
 export type DocumentIngestionStatus = "pending" | "processing" | "processed" | "failed" | "unsupported" | "empty_text";
 export type PreAnalysisReportStatus = "draft" | "completed" | "failed";
+export type AuthorExternalSearchStatus = "pending" | "completed" | "failed" | "not_found";
 
 export type Office = {
   id: string;
@@ -210,4 +211,43 @@ export type PreAnalysisAcknowledgement = {
   report_id: string;
   acknowledged_by: string;
   acknowledged_at: string;
+};
+
+export type AuthorExternalSearch = {
+  id: string;
+  office_id: string;
+  case_id: string;
+  party_id: string;
+  provider: "escavador";
+  cpf: string;
+  tribunal: string;
+  status: AuthorExternalSearchStatus;
+  provider_search_id: string | null;
+  provider_result_url: string | null;
+  request_payload: Record<string, unknown>;
+  raw_response: Record<string, unknown>;
+  error_message: string | null;
+  requested_by: string | null;
+  requested_at: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuthorExternalProcess = {
+  id: string;
+  office_id: string;
+  case_id: string;
+  party_id: string;
+  search_id: string;
+  provider: "escavador";
+  process_number: string;
+  tribunal: string | null;
+  role_hint: string | null;
+  subject_summary: string | null;
+  last_movement_at: string | null;
+  source_link: string | null;
+  raw_payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 };

@@ -11,6 +11,10 @@ export const preAnalysisEligibleDocumentTypes: CaseDocumentType[] = [
   "initial_amendment_documents"
 ];
 
+export const defenseConformityInitialDocumentTypes: CaseDocumentType[] = [...preAnalysisEligibleDocumentTypes];
+
+export const defenseConformityDefenseDocumentTypes: CaseDocumentType[] = ["defense", "defense_documents"];
+
 export function isPreAnalysisEligibleDocumentType(documentType: string) {
   return preAnalysisEligibleDocumentTypes.includes(documentType as CaseDocumentType);
 }

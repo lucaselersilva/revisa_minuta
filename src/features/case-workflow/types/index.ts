@@ -9,6 +9,13 @@ export type WorkflowValidationResult = {
   nextStep: WorkflowStepKey | null;
 };
 
+export type DefensePreparationInput = {
+  preAnalysisReviewed: boolean;
+  defenseStrategyDefined: boolean;
+  defenseDocumentsReviewed: boolean;
+  notes: string;
+};
+
 export type CaseWorkflowState = {
   caseItem: CaseDetail;
   workflow: CaseWorkflow;
@@ -21,6 +28,7 @@ export type CaseWorkflowState = {
 
 export type WorkflowCompletionInput = {
   preAnalysisConfirmed?: boolean;
+  defensePreparation?: DefensePreparationInput;
   finalReviewChecklist?: {
     defenseAttached: boolean;
     defenseDocumentsReviewed: boolean;

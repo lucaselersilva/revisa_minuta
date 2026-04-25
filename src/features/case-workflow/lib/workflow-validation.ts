@@ -1,3 +1,4 @@
+import { extractDefensePreparationFromMetadata, normalizeDefensePreparationInput } from "@/features/case-workflow/lib/defense-step";
 import { getNextWorkflowStepKey } from "@/features/case-workflow/lib/workflow-steps";
 import type { CaseWorkflowState, WorkflowCompletionInput, WorkflowValidationResult } from "@/features/case-workflow/types";
 import type { WorkflowStepKey } from "@/types/database";
@@ -8,6 +9,15 @@ function hasDocument(state: CaseWorkflowState, types: string[]) {
 
 function hasRepresentedEntity(state: CaseWorkflowState) {
   return state.caseItem.entity_links.some((link) => Boolean(link.entity));
+}
+
+function getDefensePreparation(state: CaseWorkflowState, input: WorkflowCompletionInput) {
+  if (input.defensePreparation) {
+    return normalizeDefensePreparationInput(input.defensePreparation);
+  }
+
+  const defenseStep = state.steps.find((step) => step.step_key === "defesa");
+  return extractDefensePreparationFromMetadata(defenseStep?.metadata);
 }
 
 export function validateWorkflowStepCompletion(
@@ -69,6 +79,26 @@ export function validateWorkflowStepCompletion(
 
   if (stepKey === "defesa" && !hasDocument(state, ["defense"])) {
     missingItems.push("Anexe a contestacao.");
+  }
+
+  if (stepKey === "defesa") {
+    const defensePreparation = getDefensePreparation(state, input);
+
+    if (!state.preAnalysis?.latestCompletedReport) {
+      missingItems.push("Gere um laudo previo concluido antes de fechar a defesa.");
+    }
+    if (!state.preAnalysis?.latestAcknowledgementForLatestReport) {
+      missingItems.push("Confirme a leitura do laudo previo mais recente antes de concluir a defesa.");
+    }
+    if (!defensePreparation.preAnalysisReviewed) {
+      missingItems.push("Confirme que a pre-analise foi revisada para orientar a defesa.");
+    }
+    if (!defensePreparation.defenseStrategyDefined) {
+      missingItems.push("Confirme que a linha defensiva principal foi definida.");
+    }
+    if (!defensePreparation.defenseDocumentsReviewed) {
+      missingItems.push("Confirme que os documentos defensivos foram revisados.");
+    }
   }
 
   if (stepKey === "revisao_final") {

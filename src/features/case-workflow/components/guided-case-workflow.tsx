@@ -6,8 +6,11 @@ import {
   Building2,
   CheckSquare,
   FileText,
+  Files,
   Loader2,
   Pencil,
+  Save,
+  ShieldCheck,
   Sparkles,
   UsersRound
 } from "lucide-react";
@@ -19,10 +22,16 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { applyCaseTaxonomySuggestionAction, generateCaseTaxonomySuggestionAction } from "@/features/cases/actions/case-taxonomy-actions";
 import { extractPersistedCaseTaxonomySuggestion } from "@/features/cases/lib/case-taxonomy-classification-schema";
 import { CaseStatusBadge } from "@/features/cases/components/case-status-badge";
 import { DocumentUpload, documentTypeLabels } from "@/features/cases/components/document-upload";
+import { saveDefensePreparationAction } from "@/features/case-workflow/actions/workflow-actions";
+import {
+  defaultDefensePreparationInput,
+  extractDefensePreparationFromMetadata
+} from "@/features/case-workflow/lib/defense-step";
 import { PreAnalysisWorkspace } from "@/features/document-ingestion/components/pre-analysis-workspace";
 import { StepCompletionCard } from "@/features/case-workflow/components/step-completion-card";
 import { StepGateNotice } from "@/features/case-workflow/components/step-gate-notice";
@@ -32,11 +41,15 @@ import { WorkflowStatusBadge } from "@/features/case-workflow/components/workflo
 import { WorkflowStepper } from "@/features/case-workflow/components/workflow-stepper";
 import { getWorkflowStepMeta } from "@/features/case-workflow/lib/workflow-steps";
 import { validateWorkflowStepCompletion } from "@/features/case-workflow/lib/workflow-validation";
-import type { CaseWorkflowState, WorkflowCompletionInput } from "@/features/case-workflow/types";
+import type { CaseWorkflowState, DefensePreparationInput, WorkflowCompletionInput } from "@/features/case-workflow/types";
 import type { Profile, WorkflowStepKey } from "@/types/database";
 
 export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowState; profile: Profile }) {
   const [selectedStepKey, setSelectedStepKey] = useState<WorkflowStepKey>(state.workflow.current_step);
+  const [defensePreparation, setDefensePreparation] = useState<DefensePreparationInput>(() => {
+    const defenseStep = state.steps.find((step) => step.step_key === "defesa");
+    return defenseStep ? extractDefensePreparationFromMetadata(defenseStep.metadata) : defaultDefensePreparationInput;
+  });
   const [finalChecklist, setFinalChecklist] = useState({
     defenseAttached: false,
     defenseDocumentsReviewed: false,
@@ -47,11 +60,14 @@ export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowStat
   const selectedMeta = getWorkflowStepMeta(selectedStep.step_key);
   const isPreAnalysisStep = selectedStep.step_key === "pre_analise";
   const completionInput: WorkflowCompletionInput = useMemo(() => {
+    if (selectedStep.step_key === "defesa") {
+      return { defensePreparation };
+    }
     if (selectedStep.step_key === "revisao_final") {
       return { finalReviewChecklist: finalChecklist };
     }
     return {};
-  }, [finalChecklist, selectedStep.step_key]);
+  }, [defensePreparation, finalChecklist, selectedStep.step_key]);
   const validation = validateWorkflowStepCompletion(state, selectedStep.step_key, completionInput);
 
   return (
@@ -94,6 +110,8 @@ export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowStat
                   <StepContent
                     state={state}
                     stepKey={selectedStep.step_key}
+                    defensePreparation={defensePreparation}
+                    setDefensePreparation={setDefensePreparation}
                     finalChecklist={finalChecklist}
                     setFinalChecklist={setFinalChecklist}
                   />
@@ -130,6 +148,8 @@ export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowStat
                     <StepContent
                       state={state}
                       stepKey={selectedStep.step_key}
+                      defensePreparation={defensePreparation}
+                      setDefensePreparation={setDefensePreparation}
                       finalChecklist={finalChecklist}
                       setFinalChecklist={setFinalChecklist}
                     />
@@ -195,11 +215,15 @@ function WorkflowHeader({ state }: { state: CaseWorkflowState }) {
 function StepContent({
   state,
   stepKey,
+  defensePreparation,
+  setDefensePreparation,
   finalChecklist,
   setFinalChecklist
 }: {
   state: CaseWorkflowState;
   stepKey: WorkflowStepKey;
+  defensePreparation: DefensePreparationInput;
+  setDefensePreparation: (value: DefensePreparationInput) => void;
   finalChecklist: {
     defenseAttached: boolean;
     defenseDocumentsReviewed: boolean;
@@ -257,14 +281,13 @@ function StepContent({
 
   if (stepKey === "defesa") {
     return (
-      <DocumentUpload
+      <DefenseWorkspace
         caseId={state.caseItem.id}
         officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
-        allowedDocumentTypes={["defense", "defense_documents"]}
-        allowedStages={["defense"]}
-        defaultDocumentType="defense"
-        defaultStage="defense"
+        snapshot={state.preAnalysis}
+        preparation={defensePreparation}
+        onChange={setDefensePreparation}
       />
     );
   }
@@ -574,6 +597,199 @@ function FinalReviewChecklist({
       </div>
     </div>
   );
+}
+
+function DefenseWorkspace({
+  caseId,
+  officeId,
+  documents,
+  snapshot,
+  preparation,
+  onChange
+}: {
+  caseId: string;
+  officeId: string;
+  documents: CaseWorkflowState["caseItem"]["documents"];
+  snapshot: CaseWorkflowState["preAnalysis"];
+  preparation: DefensePreparationInput;
+  onChange: (value: DefensePreparationInput) => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const defenseDocuments = documents.filter((document) => document.stage === "defense");
+  const mainDefenseCount = defenseDocuments.filter((document) => document.document_type === "defense").length;
+  const supportDefenseCount = defenseDocuments.filter((document) => document.document_type === "defense_documents").length;
+  const latestReport = snapshot?.latestCompletedReport ?? null;
+  const hasAcknowledgement = Boolean(snapshot?.latestAcknowledgementForLatestReport);
+  const checklistItems = [
+    ["preAnalysisReviewed", "Pre-analise revisada e incorporada na estrategia"],
+    ["defenseStrategyDefined", "Linha defensiva principal definida"],
+    ["defenseDocumentsReviewed", "Documentos da defesa revisados"]
+  ] as const;
+
+  function savePreparation() {
+    startTransition(async () => {
+      const result = await saveDefensePreparationAction(caseId, preparation);
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SummaryMetric icon={ShieldCheck} label="Contestacoes" value={String(mainDefenseCount)} />
+        <SummaryMetric icon={Files} label="Anexos defensivos" value={String(supportDefenseCount)} />
+        <SummaryMetric
+          icon={BrainCircuit}
+          label="Laudo previo"
+          value={latestReport ? `v${latestReport.version}${hasAcknowledgement ? " confirmado" : ""}` : "Nao gerado"}
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_1.1fr]">
+        <div className="space-y-5">
+          <div className="rounded-lg border bg-white p-5">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Preparacao da defesa</h3>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Use a pre-analise como base, anexe a contestacao principal e confirme o fechamento operacional desta etapa.
+            </p>
+            <div className="mt-5 space-y-2">
+              {checklistItems.map(([key, label]) => (
+                <label key={key} className="flex items-center gap-3 rounded-md border bg-muted/30 p-3 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    checked={preparation[key]}
+                    onChange={(event) => onChange({ ...preparation, [key]: event.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <div className="mt-4">
+              <p className="mb-2 text-sm font-medium">Observacoes da estrategia</p>
+              <Textarea
+                value={preparation.notes}
+                onChange={(event) => onChange({ ...preparation, notes: event.target.value })}
+                placeholder="Registre teses, pontos sensiveis, documentos internos pendentes ou observacoes para a revisao final."
+                rows={6}
+              />
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button type="button" variant="outline" disabled={isPending} onClick={savePreparation}>
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Salvar preparo
+              </Button>
+            </div>
+          </div>
+
+          <DocumentUpload
+            caseId={caseId}
+            officeId={officeId}
+            documents={documents}
+            allowedDocumentTypes={["defense", "defense_documents"]}
+            allowedStages={["defense"]}
+            defaultDocumentType="defense"
+            defaultStage="defense"
+          />
+        </div>
+
+        <div className="space-y-5">
+          <div className="rounded-lg border bg-white p-5">
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Base da pre-analise</h3>
+            </div>
+            {latestReport ? (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <p className="font-medium">
+                    Ultimo laudo concluido: v{latestReport.version}
+                    {hasAcknowledgement ? " - leitura confirmada" : " - leitura pendente"}
+                  </p>
+                  <p className="mt-1 text-muted-foreground">
+                    Gerado por {latestReport.generated_profile?.full_name ?? "usuario interno"} em{" "}
+                    {new Date(latestReport.generated_at ?? latestReport.created_at).toLocaleString("pt-BR")}
+                  </p>
+                </div>
+                <StringListCard
+                  title="Documentos internos recomendados"
+                  items={extractStringArray(latestReport.report_json, "documentos_internos_recomendados_para_defesa")}
+                  emptyMessage="Nenhuma recomendacao especifica registrada no laudo."
+                />
+                <StringListCard
+                  title="Pontos exploraveis para defesa"
+                  items={extractExplorableDefensePoints(latestReport.report_json)}
+                  emptyMessage="Nenhum ponto exploravel estruturado no laudo."
+                />
+              </div>
+            ) : (
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                A defesa ainda nao tem laudo previo concluido. Gere e confirme a pre-analise antes de fechar esta etapa.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-lg border bg-white p-5">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Resumo documental da defesa</h3>
+            </div>
+            <div className="mt-4 space-y-3">
+              {defenseDocuments.length ? (
+                defenseDocuments.map((document) => (
+                  <div key={document.id} className="rounded-md border bg-muted/25 p-3">
+                    <p className="font-medium">{document.file_name ?? "Documento sem nome"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {documentTypeLabels[document.document_type]} - {document.mime_type ?? "mime desconhecido"}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhum documento da defesa anexado ainda.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function extractStringArray(reportJson: Record<string, unknown> | null, key: string) {
+  const value = reportJson?.[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function extractExplorableDefensePoints(reportJson: Record<string, unknown> | null) {
+  const value = reportJson?.pontos_exploraveis_defesa;
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const point = "ponto" in item && typeof item.ponto === "string" ? item.ponto : null;
+      const justification = "justificativa" in item && typeof item.justificativa === "string" ? item.justificativa : null;
+      if (!point) {
+        return null;
+      }
+
+      return justification ? `${point} - ${justification}` : point;
+    })
+    .filter((item): item is string => Boolean(item));
 }
 
 function ReportStep({ state }: { state: CaseWorkflowState }) {

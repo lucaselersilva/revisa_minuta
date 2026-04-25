@@ -105,6 +105,40 @@ function looksLikeNarrativeFragment(value: string) {
   return false;
 }
 
+function containsBlockedInstitutionalTerms(value: string) {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+  const blockedWords = [
+    "procedimento",
+    "juizado",
+    "orgao",
+    "unidade",
+    "jurisdicional",
+    "civel",
+    "justica",
+    "pedido",
+    "poder",
+    "judiciario",
+    "processo",
+    "eletronico",
+    "partes",
+    "advogados",
+    "pje",
+    "minas",
+    "gerais",
+    "belo",
+    "horizonte",
+    "ultima",
+    "tribunal",
+    "vara",
+    "comarca"
+  ];
+
+  return blockedWords.some((word) => normalized.includes(word));
+}
+
 function looksLikePersonName(value: string) {
   const cleaned = cleanWhitespace(value);
   if (cleaned.length < 5 || cleaned.length > 120) {
@@ -112,6 +146,10 @@ function looksLikePersonName(value: string) {
   }
 
   if (looksLikeNarrativeFragment(cleaned)) {
+    return false;
+  }
+
+  if (containsBlockedInstitutionalTerms(cleaned)) {
     return false;
   }
 
@@ -156,12 +194,14 @@ function uniqueAuthors(values: ExtractedAuthor[]) {
 
 function extractAuthorsFromRegex(text: string) {
   const authors: ExtractedAuthor[] = [];
-  const qualificationRegex =
-    /([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+){1,6})([\s\S]{0,180}?)(?:CPF|cpf|inscrit[oa].{0,20}?CPF|portador.{0,20}?CPF)?[\s:\-ºnN]*((?:\d{3}\.?\d{3}\.?\d{3}-?\d{2})?)/g;
+  const qualifiedCpfRegex =
+    /([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+){1,6})[\s\S]{0,220}?(?:CPF|inscrit[oa][\s\S]{0,30}?CPF|portador[oa]?[\s\S]{0,30}?CPF)[^\d]{0,20}(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/g;
+  const labelledAuthorRegex =
+    /(?:autor(?:a)?|requerente|promovente)(?:\(a\))?\s*:?\s*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+){1,6})(?:[\s\S]{0,80}?(?:CPF|inscrit[oa][\s\S]{0,30}?CPF)[^\d]{0,20}(\d{3}\.?\d{3}\.?\d{3}-?\d{2}))?/gi;
 
-  for (const match of text.matchAll(qualificationRegex)) {
+  for (const match of text.matchAll(qualifiedCpfRegex)) {
     const name = cleanWhitespace(match[1] ?? "");
-    const document = normalizeCpfOrCnpj(match[3] ?? null);
+    const document = normalizeCpfOrCnpj(match[2] ?? null);
     if (!looksLikePersonName(name)) {
       continue;
     }
@@ -169,6 +209,44 @@ function extractAuthorsFromRegex(text: string) {
     authors.push({
       name,
       document
+    });
+  }
+
+  for (const match of text.matchAll(labelledAuthorRegex)) {
+    const name = cleanWhitespace(match[1] ?? "");
+    const document = normalizeCpfOrCnpj(match[2] ?? null);
+    if (!looksLikePersonName(name)) {
+      continue;
+    }
+
+    authors.push({
+      name,
+      document
+    });
+  }
+
+  const beforeDefendant = text.split(/(?:em face de|em desfavor de|promove.*contra|ajuiza.*contra)/i)[0] ?? text;
+  const captionRegex =
+    /\b([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+){1,5})\b/g;
+
+  for (const match of beforeDefendant.matchAll(captionRegex)) {
+    const name = cleanWhitespace(match[1] ?? "");
+    if (!looksLikePersonName(name)) {
+      continue;
+    }
+
+    const windowStart = Math.max(0, (match.index ?? 0) - 60);
+    const windowEnd = Math.min(beforeDefendant.length, (match.index ?? 0) + name.length + 180);
+    const nearbyText = beforeDefendant.slice(windowStart, windowEnd);
+    const hasPartyCue = /(?:autor(?:a)?|requerente|promovente|qualifica[çc][aã]o|residente|domiciliad[oa]|CPF)/i.test(nearbyText);
+
+    if (!hasPartyCue) {
+      continue;
+    }
+
+    authors.push({
+      name,
+      document: normalizeCpfOrCnpj(nearbyText)
     });
   }
 
@@ -294,6 +372,15 @@ export async function extractCaseDraftFromUploadedDocument({
     const parsedJson = JSON.parse(extractJsonPayload(response.text));
     const parsed = caseIntakeUploadExtractionSchema.parse(parsedJson);
     const normalizedAuthors = uniqueAuthors(parsed.authors);
+    const strongFallbackAuthors = fallback.authors.filter((author) => Boolean(author.document));
+    const selectedAuthors =
+      strongFallbackAuthors.length > 0
+        ? strongFallbackAuthors
+        : fallback.authors.length > 0
+          ? fallback.authors
+          : normalizedAuthors.filter((author) => Boolean(author.document)).length > 0
+            ? normalizedAuthors.filter((author) => Boolean(author.document))
+            : [];
 
     return {
       extraction: {
@@ -304,7 +391,7 @@ export async function extractCaseDraftFromUploadedDocument({
           parsed.represented_entity_name,
           extractedText
         ),
-        authors: normalizedAuthors.length > 0 ? normalizedAuthors : fallback.authors
+        authors: selectedAuthors
       },
       modelName: response.modelName,
       promptVersion: CASE_INTAKE_UPLOAD_PROMPT_VERSION,

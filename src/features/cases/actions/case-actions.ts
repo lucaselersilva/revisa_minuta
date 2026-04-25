@@ -4,9 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { bootstrapCaseWorkflow } from "@/features/case-workflow/services/workflow-bootstrap-service";
+import { extractCaseDraftFromUploadedDocument } from "@/features/cases/services/case-intake-upload-extraction-service";
 import { getCurrentProfile } from "@/features/profiles/queries/get-current-profile";
 import { writeCaseHistory } from "@/features/cases/services/case-history-service";
 import { buildCaseFilePath } from "@/features/cases/services/storage-path";
+import { analyzeProcessedDocument } from "@/features/document-ingestion/services/analyze-processed-document";
+import { parseDocumentByMimeType } from "@/features/document-ingestion/services/parser-dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -32,6 +35,70 @@ const allowedMimeTypes = new Set([
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 ]);
+
+function buildImportedCaseTitle({
+  extractedTitle,
+  caseNumber,
+  firstAuthor,
+  representedEntity,
+  fileName
+}: {
+  extractedTitle: string | null;
+  caseNumber: string | null;
+  firstAuthor: string | null;
+  representedEntity: string | null;
+  fileName: string;
+}) {
+  if (extractedTitle?.trim()) {
+    return extractedTitle.trim();
+  }
+
+  if (caseNumber) {
+    return `Processo ${caseNumber}`;
+  }
+
+  if (firstAuthor && representedEntity) {
+    return `${firstAuthor} x ${representedEntity}`;
+  }
+
+  return fileName.replace(/\.[^.]+$/, "") || "Processo importado";
+}
+
+function normalizeName(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findMatchingEntityIdByName(
+  entityName: string | null,
+  existingEntities: Array<{ id: string; name: string }>
+) {
+  const normalizedTarget = normalizeName(entityName);
+
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  const exact = existingEntities.find((entity) => normalizeName(entity.name) === normalizedTarget);
+  if (exact) {
+    return exact.id;
+  }
+
+  const partial = existingEntities.find((entity) => {
+    const normalizedEntity = normalizeName(entity.name);
+    return normalizedEntity.includes(normalizedTarget) || normalizedTarget.includes(normalizedEntity);
+  });
+
+  return partial?.id ?? null;
+}
 
 async function requireProfile() {
   const { profile } = await getCurrentProfile();
@@ -137,6 +204,264 @@ export async function createCaseAction(input: CaseFormInput): Promise<ActionResu
   }
 
   redirect(`/app/cases/${createdCaseId}`);
+}
+
+export async function createCaseFromUploadAction(formData: FormData): Promise<ActionResult> {
+  const profile = await requireProfile();
+
+  if (!profile?.office_id) {
+    return { ok: false, message: "Perfil interno nao encontrado." };
+  }
+
+  const file = formData.get("file");
+
+  if (!(file instanceof File) || file.size <= 0) {
+    return { ok: false, message: "Selecione um arquivo para iniciar o cadastro por upload." };
+  }
+
+  if (!allowedMimeTypes.has(file.type)) {
+    return { ok: false, message: `Tipo de arquivo nao permitido: ${file.name}` };
+  }
+
+  const supabase = await createClient();
+  const adminSupabase = createAdminClient();
+  const caseId = crypto.randomUUID();
+  const filePath = buildCaseFilePath({
+    officeId: profile.office_id,
+    caseId,
+    stage: "initial",
+    documentType: "initial_petition",
+    fileName: file.name
+  });
+
+  let uploadedToStorage = false;
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const parsed = await parseDocumentByMimeType({ mimeType: file.type, buffer });
+    const extractionResult = await extractCaseDraftFromUploadedDocument({
+      fileName: file.name,
+      mimeType: file.type,
+      fileBuffer: buffer,
+      extractedText: parsed.extractedText
+    });
+    const [entitiesResult] = await Promise.all([
+      supabase
+        .from("AA_case_entities")
+        .select("id, name")
+        .order("name", { ascending: true })
+        .returns<Array<{ id: string; name: string }>>()
+    ]);
+
+    const extracted = extractionResult.extraction;
+    const title = buildImportedCaseTitle({
+      extractedTitle: extracted.title,
+      caseNumber: extracted.case_number,
+      firstAuthor: extracted.authors[0] ?? null,
+      representedEntity: extracted.represented_entity_name,
+      fileName: file.name
+    });
+
+    const { error: caseError } = await supabase.from("AA_cases").insert({
+      id: caseId,
+      office_id: profile.office_id,
+      case_number: extracted.case_number || null,
+      title,
+      description:
+        extracted.summary && extracted.summary !== "Extracao inicial gerada por fallback textual com baixa confianca operacional."
+          ? extracted.summary
+          : "Cadastro inicial criado a partir de upload. Revise os dados extraidos antes de seguir.",
+      status: "draft",
+      taxonomy_id: null,
+      responsible_lawyer_id: profile.id,
+      created_by: profile.id
+    });
+
+    if (caseError) {
+      return { ok: false, message: "Nao foi possivel criar o processo a partir do upload." };
+    }
+
+    const matchedEntityId = findMatchingEntityIdByName(
+      extracted.represented_entity_name,
+      entitiesResult.data ?? []
+    );
+    let entityId = matchedEntityId;
+
+    if (!entityId && extracted.represented_entity_name) {
+      const entityInsert = await supabase
+        .from("AA_case_entities")
+        .insert({
+          office_id: profile.office_id,
+          name: extracted.represented_entity_name,
+          document: null
+        })
+        .select("id")
+        .single<{ id: string }>();
+
+      entityId = entityInsert.data?.id ?? null;
+    }
+
+    if (entityId) {
+      await supabase.from("AA_case_entity_links").insert({
+        case_id: caseId,
+        entity_id: entityId
+      });
+    }
+
+    if (extracted.authors.length > 0) {
+      await supabase.from("AA_case_parties").insert(
+        extracted.authors.map((author) => ({
+          case_id: caseId,
+          role: "author",
+          name: author,
+          document: null
+        }))
+      );
+    }
+
+    await bootstrapCaseWorkflow(caseId, profile);
+
+    const { error: uploadError } = await supabase.storage.from("aa-case-files").upload(filePath, file, {
+      contentType: file.type,
+      upsert: false
+    });
+
+    if (uploadError) {
+      throw new Error(`Nao foi possivel enviar ${file.name}.`);
+    }
+
+    uploadedToStorage = true;
+
+    const documentInsert = await supabase
+      .from("AA_case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: profile.id,
+        document_type: "initial_petition",
+        file_path: filePath,
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type,
+        stage: "initial"
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (!documentInsert.data?.id) {
+      throw new Error("Upload concluido, mas nao foi possivel registrar o documento no processo.");
+    }
+
+    let analysisMetadata: Record<string, unknown> = {};
+    if (parsed.status === "processed" && parsed.extractedText) {
+      const analysis = await analyzeProcessedDocument({
+        document: {
+          id: documentInsert.data.id,
+          case_id: caseId,
+          uploaded_by: profile.id,
+          document_type: "initial_petition",
+          file_path: filePath,
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type,
+          stage: "initial",
+          created_at: new Date().toISOString()
+        },
+        extractedText: parsed.extractedText,
+        fileBuffer: buffer,
+        parserType: parsed.parserType,
+        parserMetadata: parsed.metadata
+      });
+
+      analysisMetadata =
+        analysis.status === "completed"
+          ? {
+              analysis_status: "completed",
+              analysis_model_name: analysis.modelName,
+              analysis_prompt_version: analysis.promptVersion,
+              document_analysis: analysis.report
+            }
+          : {
+              analysis_status: analysis.status,
+              analysis_prompt_version: analysis.promptVersion,
+              analysis_error_message: analysis.errorMessage
+            };
+    }
+
+    await supabase.from("AA_document_ingestions").upsert(
+      {
+        office_id: profile.office_id,
+        case_document_id: documentInsert.data.id,
+        status: parsed.status,
+        parser_type: parsed.parserType,
+        extracted_text: parsed.extractedText,
+        extracted_text_length: parsed.extractedTextLength,
+        detected_language: parsed.detectedLanguage,
+        error_message: parsed.errorMessage,
+        metadata: {
+          ...parsed.metadata,
+          ...analysisMetadata,
+          file_name: file.name,
+          mime_type: file.type,
+          intake_prompt_version: extractionResult.promptVersion,
+          intake_model_name: extractionResult.modelName,
+          intake_used_fallback: extractionResult.usedFallback,
+          intake_summary: extracted.summary,
+          intake_cautionary_notes: extracted.cautionary_notes
+        },
+        processed_at: new Date().toISOString()
+      },
+      { onConflict: "case_document_id" }
+    );
+
+    await writeCaseHistory({
+      caseId,
+      action: "case.created_via_upload",
+      profile,
+      metadata: {
+        file_name: file.name,
+        imported_case_number: extracted.case_number,
+        imported_authors: extracted.authors,
+        represented_entity_name: extracted.represented_entity_name,
+        used_fallback: extractionResult.usedFallback
+      }
+    });
+
+    await writeCaseHistory({
+      caseId,
+      action: "document.uploaded",
+      profile,
+      metadata: {
+        count: 1,
+        document_type: "initial_petition",
+        stage: "initial",
+        files: [file.name]
+      }
+    });
+
+    await writeAuditLog({
+      profile,
+      action: "case.created_via_upload",
+      entityType: "AA_cases",
+      entityId: caseId,
+      metadata: {
+        file_name: file.name,
+        imported_case_number: extracted.case_number,
+        used_fallback: extractionResult.usedFallback
+      }
+    });
+  } catch (error) {
+    if (uploadedToStorage) {
+      await adminSupabase.storage.from("aa-case-files").remove([filePath]);
+    }
+
+    await adminSupabase.from("AA_cases").delete().eq("id", caseId);
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Nao foi possivel criar o processo por upload."
+    };
+  }
+
+  redirect(`/app/cases/${caseId}/edit?source=upload`);
 }
 
 export async function updateCaseAction(id: string, input: CaseFormInput): Promise<ActionResult> {

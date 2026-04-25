@@ -5,7 +5,12 @@ export type CasePartyRole = "author" | "defendant" | "third_party";
 export type CaseDocumentType =
   | "initial_petition"
   | "author_documents"
+  | "author_identity_document"
+  | "author_address_proof"
+  | "author_payment_proof"
+  | "author_screen_capture"
   | "initial_amendment"
+  | "initial_amendment_documents"
   | "defense"
   | "defense_documents"
   | "other";

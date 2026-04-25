@@ -1,17 +1,23 @@
 import { PageShell } from "@/components/layout/page-shell";
-import { CaseForm } from "@/features/cases/components/case-form";
+import { NewCaseEntry } from "@/features/cases/components/new-case-entry";
 import { getCaseSelectOptions } from "@/features/cases/queries/get-case-options";
+import { getCurrentProfile } from "@/features/profiles/queries/get-current-profile";
+import { notFound } from "next/navigation";
 
 export default async function NewCasePage() {
-  const options = await getCaseSelectOptions();
+  const [{ profile }, options] = await Promise.all([getCurrentProfile(), getCaseSelectOptions()]);
+
+  if (!profile) {
+    notFound();
+  }
 
   return (
     <PageShell
       eyebrow="Novo processo"
       title="Cadastrar processo"
-      description="Crie a estrutura base do caso, vincule a empresa representada e organize as partes processuais."
+      description="Escolha entre cadastro manual ou criacao por upload da peticao inicial para iniciar o fluxo do processo."
     >
-      <CaseForm options={options} />
+      <NewCaseEntry options={options} profile={profile} />
     </PageShell>
   );
 }

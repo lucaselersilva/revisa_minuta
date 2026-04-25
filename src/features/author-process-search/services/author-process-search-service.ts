@@ -268,7 +268,9 @@ async function fetchInitialDocumentText(caseId: string) {
   const targetDocumentIds = caseItem.documents
     .filter(
       (document) =>
-        document.document_type === "initial_petition" || document.document_type === "initial_amendment"
+        document.document_type === "initial_petition" ||
+        document.document_type === "initial_amendment" ||
+        document.document_type === "initial_amendment_documents"
     )
     .map((document) => document.id);
 

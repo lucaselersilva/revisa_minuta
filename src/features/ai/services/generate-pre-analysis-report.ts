@@ -17,8 +17,13 @@ const PRE_ANALYSIS_MULTIMODAL_MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 function documentPriority(documentType: string) {
   if (documentType === "initial_petition") return 0;
   if (documentType === "initial_amendment") return 1;
-  if (documentType === "author_documents") return 2;
-  return 3;
+  if (documentType === "initial_amendment_documents") return 2;
+  if (documentType === "author_documents") return 3;
+  if (documentType === "author_identity_document") return 4;
+  if (documentType === "author_address_proof") return 5;
+  if (documentType === "author_payment_proof") return 6;
+  if (documentType === "author_screen_capture") return 7;
+  return 8;
 }
 
 async function buildPreAnalysisAnthropicContent({

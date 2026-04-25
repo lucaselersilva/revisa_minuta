@@ -26,9 +26,10 @@ const partyRoleLabels = {
 type Props = {
   options: CaseSelectOptions;
   initialCase?: CaseDetail;
+  importedFromUpload?: boolean;
 };
 
-export function CaseForm({ options, initialCase }: Props) {
+export function CaseForm({ options, initialCase, importedFromUpload = false }: Props) {
   const [isPending, startTransition] = useTransition();
   const currentEntity = initialCase?.entity_links[0]?.entity;
   const defaultEntityMode = currentEntity || options.entities.length > 0 ? "existing" : "new";
@@ -70,10 +71,21 @@ export function CaseForm({ options, initialCase }: Props) {
 
   return (
     <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
+      {importedFromUpload ? (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="pt-6">
+            <p className="text-sm font-semibold text-slate-900">Dados pre-preenchidos a partir do upload inicial</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Revise os campos preenchidos automaticamente, ajuste autores, empresa representada e demais informacoes que precisarem de confirmacao antes de seguir o fluxo.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Dados do processo</CardTitle>
-          <CardDescription>Identificacao operacional, sem analise juridica automatizada nesta etapa.</CardDescription>
+          <CardDescription>Identificacao operacional do caso. A classificacao automatica da taxonomia pode ser sugerida depois no fluxo guiado.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">

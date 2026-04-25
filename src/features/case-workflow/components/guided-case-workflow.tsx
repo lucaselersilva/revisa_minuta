@@ -2,18 +2,25 @@
 
 import {
   BarChart3,
+  BrainCircuit,
   Building2,
   CheckSquare,
   FileText,
+  Loader2,
   Pencil,
+  Sparkles,
   UsersRound
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { applyCaseTaxonomySuggestionAction, generateCaseTaxonomySuggestionAction } from "@/features/cases/actions/case-taxonomy-actions";
+import { extractPersistedCaseTaxonomySuggestion } from "@/features/cases/lib/case-taxonomy-classification-schema";
 import { CaseStatusBadge } from "@/features/cases/components/case-status-badge";
 import { DocumentUpload, documentTypeLabels } from "@/features/cases/components/document-upload";
 import { PreAnalysisWorkspace } from "@/features/document-ingestion/components/pre-analysis-workspace";
@@ -214,7 +221,15 @@ function StepContent({
         caseId={state.caseItem.id}
         officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
-        allowedDocumentTypes={["initial_petition", "author_documents"]}
+        allowedDocumentTypes={[
+          "initial_petition",
+          "author_documents",
+          "author_identity_document",
+          "author_address_proof",
+          "author_payment_proof",
+          "author_screen_capture",
+          "other"
+        ]}
         allowedStages={["initial"]}
         defaultDocumentType="initial_petition"
         defaultStage="initial"
@@ -228,7 +243,7 @@ function StepContent({
         caseId={state.caseItem.id}
         officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
-        allowedDocumentTypes={["initial_amendment"]}
+        allowedDocumentTypes={["initial_amendment", "initial_amendment_documents", "other"]}
         allowedStages={["pre_analysis"]}
         defaultDocumentType="initial_amendment"
         defaultStage="pre_analysis"
@@ -267,6 +282,8 @@ function StepContent({
 }
 
 function InitialRegistrationStep({ state }: { state: CaseWorkflowState }) {
+  const cadastroStep = state.steps.find((step) => step.step_key === "cadastro_inicial") ?? null;
+  const taxonomySuggestion = extractPersistedCaseTaxonomySuggestion(cadastroStep?.metadata);
   const entity = state.caseItem.entity_links[0]?.entity;
   const rows = [
     { label: "Titulo", value: state.caseItem.title || "Nao informado" },
@@ -277,29 +294,239 @@ function InitialRegistrationStep({ state }: { state: CaseWorkflowState }) {
   ];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
-      <div className="space-y-3">
-        {rows.map((row) => (
-          <div key={row.label} className="rounded-lg border bg-white p-4">
-            <p className="text-xs font-medium uppercase text-muted-foreground">{row.label}</p>
-            <p className="mt-1 text-sm font-semibold">{row.value}</p>
-          </div>
-        ))}
-      </div>
-      <div className="rounded-lg border bg-white p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <UsersRound className="h-4 w-4 text-primary" />
-          <p className="font-semibold">Partes cadastradas</p>
-        </div>
-        <div className="space-y-2">
-          {state.caseItem.parties.map((party) => (
-            <div key={party.id} className="rounded-md bg-muted/45 px-3 py-2 text-sm">
-              <p className="font-medium">{party.name}</p>
-              <p className="text-xs text-muted-foreground">{party.role}</p>
+    <div className="space-y-4">
+      <TaxonomySuggestionCard
+        caseId={state.caseItem.id}
+        currentTaxonomyCode={state.caseItem.taxonomy?.code ?? null}
+        suggestion={taxonomySuggestion}
+        processedDocuments={state.preAnalysis?.metrics.processedCount ?? 0}
+        totalRelevantDocuments={state.preAnalysis?.metrics.eligibleCount ?? 0}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <div key={row.label} className="rounded-lg border bg-white p-4">
+              <p className="text-xs font-medium uppercase text-muted-foreground">{row.label}</p>
+              <p className="mt-1 text-sm font-semibold">{row.value}</p>
             </div>
           ))}
         </div>
+        <div className="rounded-lg border bg-white p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <UsersRound className="h-4 w-4 text-primary" />
+            <p className="font-semibold">Partes cadastradas</p>
+          </div>
+          <div className="space-y-2">
+            {state.caseItem.parties.map((party) => (
+              <div key={party.id} className="rounded-md bg-muted/45 px-3 py-2 text-sm">
+                <p className="font-medium">{party.name}</p>
+                <p className="text-xs text-muted-foreground">{party.role}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function TaxonomySuggestionCard({
+  caseId,
+  currentTaxonomyCode,
+  suggestion,
+  processedDocuments,
+  totalRelevantDocuments
+}: {
+  caseId: string;
+  currentTaxonomyCode: string | null;
+  suggestion: ReturnType<typeof extractPersistedCaseTaxonomySuggestion>;
+  processedDocuments: number;
+  totalRelevantDocuments: number;
+}) {
+  const router = useRouter();
+  const [isGenerating, startGenerating] = useTransition();
+  const [isApplying, startApplying] = useTransition();
+  const recommendation = suggestion?.recommendation ?? null;
+  const hasApplicableSuggestion = Boolean(recommendation?.taxonomy_id && recommendation.taxonomy_code);
+  const alreadyApplied = Boolean(suggestion?.application);
+  const matchesCurrentTaxonomy = Boolean(currentTaxonomyCode && currentTaxonomyCode === recommendation?.taxonomy_code);
+
+  function refreshAfter(result: { ok: boolean; message: string }) {
+    if (result.ok) {
+      toast.success(result.message);
+      router.refresh();
+      return;
+    }
+
+    toast.error(result.message);
+  }
+
+  return (
+    <Card className="border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,1),rgba(248,250,252,1))] shadow-sm">
+      <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-4xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <BrainCircuit className="h-5 w-5 text-primary" />
+              Classificacao automatica do caso
+            </CardTitle>
+            {recommendation?.taxonomy_code ? <Badge variant="secondary">{recommendation.taxonomy_code}</Badge> : null}
+            {recommendation ? <ConfidenceBadge confidence={recommendation.confidence} /> : null}
+            {alreadyApplied ? <Badge variant="success">Aplicada</Badge> : null}
+          </div>
+          <CardDescription className="mt-2 leading-6">
+            A IA sugere a taxonomia operacional com base no cadastro do processo e nos documentos processados, sem substituir a validacao humana.
+          </CardDescription>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isGenerating}
+            onClick={() =>
+              startGenerating(async () => {
+                const result = await generateCaseTaxonomySuggestionAction(caseId);
+                refreshAfter(result);
+              })
+            }
+          >
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {suggestion ? "Atualizar sugestao" : "Gerar sugestao"}
+          </Button>
+          {hasApplicableSuggestion && !matchesCurrentTaxonomy ? (
+            <Button
+              type="button"
+              disabled={isApplying}
+              onClick={() =>
+                startApplying(async () => {
+                  const result = await applyCaseTaxonomySuggestionAction(caseId);
+                  refreshAfter(result);
+                })
+              }
+            >
+              {isApplying ? <Loader2 className="h-4 w-4 animate-spin" /> : <BrainCircuit className="h-4 w-4" />}
+              Aplicar taxonomia sugerida
+            </Button>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-3 md:grid-cols-3">
+          <MetricTile label="Taxonomia atual" value={currentTaxonomyCode ?? "Nao definida"} />
+          <MetricTile label="Documentos relevantes" value={String(totalRelevantDocuments)} />
+          <MetricTile label="Documentos processados" value={String(processedDocuments)} />
+        </div>
+
+        {!suggestion ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4 text-sm text-slate-600">
+            Nenhuma sugestao foi gerada ainda. Quando houver dados cadastrais e, idealmente, documentos processados, a IA pode propor a taxonomia mais aderente.
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="space-y-4">
+              <div className="rounded-xl border bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Sintese operacional</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">
+                  {recommendation?.taxonomy_code
+                    ? `${recommendation.taxonomy_code} - ${recommendation.taxonomy_name ?? "Taxonomia sugerida"}`
+                    : "Classificacao inconclusiva"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {recommendation?.summary ?? "A sugestao ainda nao trouxe resumo operacional."}
+                </p>
+                <p className="mt-3 text-sm leading-6 text-slate-700">
+                  <span className="font-medium text-slate-900">Justificativa:</span> {recommendation?.rationale ?? "Sem justificativa estruturada."}
+                </p>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <StringListCard
+                  title="Sinais que sustentam"
+                  items={recommendation?.matched_signals ?? []}
+                  emptyMessage="A IA nao destacou sinais positivos suficientes."
+                />
+                <StringListCard
+                  title="Lacunas para confirmar"
+                  items={recommendation?.missing_signals ?? []}
+                  emptyMessage="Nao ha lacunas adicionais destacadas."
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <StringListCard
+                title="Documentos considerados"
+                items={recommendation?.documents_considered ?? []}
+                emptyMessage="Nao houve documentos explicitamente citados."
+              />
+              <StringListCard
+                title="Taxonomias alternativas"
+                items={recommendation?.alternative_taxonomy_codes ?? []}
+                emptyMessage="A IA nao sugeriu alternativas proximas."
+              />
+              <StringListCard
+                title="Alertas de cautela"
+                items={recommendation?.cautionary_notes ?? []}
+                emptyMessage="Nenhum alerta adicional foi registrado."
+              />
+              {matchesCurrentTaxonomy ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                  A taxonomia atual ja coincide com a recomendacao mais recente da IA.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConfidenceBadge({ confidence }: { confidence: "low" | "medium" | "high" }) {
+  if (confidence === "high") {
+    return <Badge variant="success">Confianca alta</Badge>;
+  }
+
+  if (confidence === "medium") {
+    return <Badge variant="secondary">Confianca media</Badge>;
+  }
+
+  return <Badge variant="outline">Confianca baixa</Badge>;
+}
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function StringListCard({
+  title,
+  items,
+  emptyMessage
+}: {
+  title: string;
+  items: string[];
+  emptyMessage: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <p className="text-sm font-semibold text-slate-900">{title}</p>
+      {items.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {items.map((item) => (
+            <div key={item} className="rounded-lg bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+              {item}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">{emptyMessage}</p>
+      )}
     </div>
   );
 }

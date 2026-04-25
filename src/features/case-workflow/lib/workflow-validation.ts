@@ -38,11 +38,24 @@ export function validateWorkflowStepCompletion(
   }
 
   if (stepKey === "documentos_autor" && !hasDocument(state, ["initial_petition", "author_documents"])) {
-    missingItems.push("Anexe a peticao inicial ou documentos do autor.");
+    const initialDocumentTypes = [
+      "initial_petition",
+      "author_documents",
+      "author_identity_document",
+      "author_address_proof",
+      "author_payment_proof",
+      "author_screen_capture"
+    ];
+    if (!hasDocument(state, initialDocumentTypes)) {
+      missingItems.push("Anexe a peticao inicial ou documentos relevantes do autor.");
+    }
   }
 
-  if (stepKey === "emenda_inicial" && !hasDocument(state, ["initial_amendment"])) {
-    warnings.push("Nenhuma emenda foi anexada. A etapa pode ser concluida manualmente ou marcada como nao se aplica.");
+  if (stepKey === "emenda_inicial") {
+    const amendmentDocumentTypes = ["initial_amendment", "initial_amendment_documents"];
+    if (!hasDocument(state, amendmentDocumentTypes)) {
+      warnings.push("Nenhuma emenda foi anexada. A etapa pode ser concluida manualmente ou marcada como nao se aplica.");
+    }
   }
 
   if (stepKey === "pre_analise" && !input.preAnalysisConfirmed) {

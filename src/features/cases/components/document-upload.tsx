@@ -20,7 +20,12 @@ import type { CaseDocument, CaseDocumentStage, CaseDocumentType } from "@/types/
 const documentTypeLabels: Record<CaseDocumentType, string> = {
   initial_petition: "Peticao inicial",
   author_documents: "Documentos do autor",
+  author_identity_document: "Documento de identidade do autor",
+  author_address_proof: "Comprovante de endereco do autor",
+  author_payment_proof: "Comprovante de pagamento",
+  author_screen_capture: "Prints e capturas de tela",
   initial_amendment: "Emenda a inicial",
+  initial_amendment_documents: "Documentos da emenda",
   defense: "Contestacao",
   defense_documents: "Documentos da defesa",
   other: "Outros"

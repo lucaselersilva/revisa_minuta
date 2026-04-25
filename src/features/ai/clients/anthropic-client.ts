@@ -55,14 +55,29 @@ async function requestAnthropic({
   modelName,
   systemPrompt,
   userContent,
-  maxTokens = 4000
+  maxTokens = 4000,
+  includeTemperature = true
 }: {
   apiKey: string;
   modelName: string;
   systemPrompt: string;
   userContent: string | AnthropicContentBlock[];
   maxTokens?: number;
+  includeTemperature?: boolean;
 }) {
+  const payload = {
+    model: modelName,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [
+      {
+        role: "user",
+        content: userContent
+      }
+    ],
+    ...(includeTemperature ? { temperature: 0.2 } : {})
+  };
+
   const response = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
@@ -70,18 +85,7 @@ async function requestAnthropic({
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01"
     },
-    body: JSON.stringify({
-      model: modelName,
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: userContent
-        }
-      ]
-    })
+    body: JSON.stringify(payload)
   });
 
   if (!response.ok) {
@@ -106,6 +110,15 @@ async function requestAnthropic({
     modelName,
     text
   };
+}
+
+function shouldRetryWithoutTemperature(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("temperature") && message.includes("deprecated");
 }
 
 function shouldRetryWithFallback(error: unknown) {
@@ -167,6 +180,17 @@ export async function generateAnthropicResponse({
       maxTokens
     });
   } catch (error) {
+    if (shouldRetryWithoutTemperature(error)) {
+      return requestAnthropic({
+        apiKey,
+        modelName: preferredModel,
+        systemPrompt,
+        userContent,
+        maxTokens,
+        includeTemperature: false
+      });
+    }
+
     if (!shouldRetryWithFallback(error) || preferredModel === FALLBACK_MODEL) {
       throw error;
     }

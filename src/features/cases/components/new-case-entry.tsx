@@ -1,7 +1,7 @@
 "use client";
 
 import { FileUp, Loader2, PencilLine, ShieldCheck } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -93,8 +93,14 @@ function ModeCard({
 }
 
 function CreateCaseFromUploadCard({ profile }: { profile: Profile }) {
-  const [isPending, startTransition] = useTransition();
+  const [state, formAction, isPending] = useActionState(createCaseFromUploadAction, null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (state?.ok === false) {
+      toast.error(state.message);
+    }
+  }, [state]);
 
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -108,14 +114,7 @@ function CreateCaseFromUploadCard({ profile }: { profile: Profile }) {
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <form
             className="space-y-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-5"
-            action={(formData) =>
-              startTransition(async () => {
-                const result = await createCaseFromUploadAction(formData);
-                if (result?.ok === false) {
-                  toast.error(result.message);
-                }
-              })
-            }
+            action={formAction}
           >
             <div className="space-y-2">
               <Label htmlFor="case-intake-file">Arquivo base</Label>
@@ -153,6 +152,7 @@ function CreateCaseFromUploadCard({ profile }: { profile: Profile }) {
                 <p>Titulo operacional do caso</p>
                 <p>Numero do processo, quando constar no documento</p>
                 <p>Empresa representada que esta sendo demandada</p>
+                <p>CNPJ ou documento da empresa, quando identificado</p>
                 <p>Autores identificados na peticao inicial</p>
               </div>
             </div>

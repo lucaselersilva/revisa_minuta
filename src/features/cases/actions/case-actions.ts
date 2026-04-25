@@ -22,7 +22,7 @@ import {
 import { writeAuditLog } from "@/services/audit-log-service";
 import type { CaseDocumentStage, CaseDocumentType } from "@/types/database";
 
-type ActionResult = {
+export type ActionResult = {
   ok: boolean;
   message: string;
 };
@@ -206,7 +206,10 @@ export async function createCaseAction(input: CaseFormInput): Promise<ActionResu
   redirect(`/app/cases/${createdCaseId}`);
 }
 
-export async function createCaseFromUploadAction(formData: FormData): Promise<ActionResult> {
+export async function createCaseFromUploadAction(
+  _previousState: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
   const profile = await requireProfile();
 
   if (!profile?.office_id) {
@@ -293,12 +296,20 @@ export async function createCaseFromUploadAction(formData: FormData): Promise<Ac
         .insert({
           office_id: profile.office_id,
           name: extracted.represented_entity_name,
-          document: null
+          document: extracted.represented_entity_document || null
         })
         .select("id")
         .single<{ id: string }>();
 
       entityId = entityInsert.data?.id ?? null;
+    } else if (entityId && extracted.represented_entity_document) {
+      await supabase
+        .from("AA_case_entities")
+        .update({
+          document: extracted.represented_entity_document
+        })
+        .eq("id", entityId)
+        .is("document", null);
     }
 
     if (entityId) {
@@ -422,6 +433,7 @@ export async function createCaseFromUploadAction(formData: FormData): Promise<Ac
         imported_case_number: extracted.case_number,
         imported_authors: extracted.authors,
         represented_entity_name: extracted.represented_entity_name,
+        represented_entity_document: extracted.represented_entity_document,
         used_fallback: extractionResult.usedFallback
       }
     });
@@ -446,6 +458,7 @@ export async function createCaseFromUploadAction(formData: FormData): Promise<Ac
       metadata: {
         file_name: file.name,
         imported_case_number: extracted.case_number,
+        represented_entity_document: extracted.represented_entity_document,
         used_fallback: extractionResult.usedFallback
       }
     });

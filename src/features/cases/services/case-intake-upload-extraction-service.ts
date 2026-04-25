@@ -40,6 +40,24 @@ function normalizeCaseNumber(rawText: string | null) {
   return rawText.trim() || null;
 }
 
+function normalizeCompanyDocument(rawText: string | null) {
+  if (!rawText) {
+    return null;
+  }
+
+  const cnpjMatch = rawText.match(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/);
+  if (cnpjMatch) {
+    return cnpjMatch[0];
+  }
+
+  const cpfMatch = rawText.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/);
+  if (cpfMatch) {
+    return cpfMatch[0];
+  }
+
+  return rawText.trim() || null;
+}
+
 function uniqueNames(values: string[]) {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -69,17 +87,21 @@ function regexFallback(extractedText: string | null, fileName: string): CaseInta
     .map((value) => value.replace(/\s+/g, " ").trim())
     .slice(0, 4);
   const defendantMatch = text.match(/(?:em face de|em desfavor de|requerid[ao]|promovid[ao] contra)\s+([A-ZÀ-Ú0-9][A-ZÀ-Ú0-9\s\.\-&]{4,})/i);
+  const defendantWindow = defendantMatch
+    ? text.slice(defendantMatch.index ?? 0, Math.min(text.length, (defendantMatch.index ?? 0) + 500))
+    : text;
   const normalizedAuthors = uniqueNames(authorMatches);
 
   return {
     title: caseNumber ? `Processo ${caseNumber}` : fileName.replace(/\.[^.]+$/, ""),
     case_number: caseNumber,
     represented_entity_name: defendantMatch?.[1]?.replace(/\s+/g, " ").trim() ?? null,
+    represented_entity_document: normalizeCompanyDocument(defendantWindow),
     authors: normalizedAuthors,
     summary: "Extracao inicial gerada por fallback textual com baixa confianca operacional.",
     cautionary_notes: [
       "A extracao foi preenchida por heuristica textual local.",
-      "Revise manualmente autores, empresa representada e numero do processo."
+      "Revise manualmente autores, empresa representada, documento da empresa e numero do processo."
     ]
   };
 }
@@ -152,6 +174,7 @@ export async function extractCaseDraftFromUploadedDocument({
       extraction: {
         ...parsed,
         case_number: normalizeCaseNumber(parsed.case_number),
+        represented_entity_document: normalizeCompanyDocument(parsed.represented_entity_document),
         authors: uniqueNames(parsed.authors)
       },
       modelName: response.modelName,

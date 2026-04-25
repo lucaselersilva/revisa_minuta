@@ -22,6 +22,16 @@ export type AnthropicContentBlock =
       text: string;
     }
   | {
+      type: "document";
+      source: {
+        type: "base64";
+        media_type: "application/pdf";
+        data: string;
+      };
+      title?: string;
+      context?: string;
+    }
+  | {
       type: "image";
       source: {
         type: "base64";

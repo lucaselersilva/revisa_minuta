@@ -1,4 +1,4 @@
-export const PRE_ANALYSIS_PROMPT_VERSION = "v3_rastreabilidade_defesa";
+export const PRE_ANALYSIS_PROMPT_VERSION = "v4_pdf_integral_sem_repeticao";
 
 export function buildPreAnalysisSystemPrompt() {
   return [
@@ -18,6 +18,9 @@ export function buildPreAnalysisSystemPrompt() {
     "Diferencie documentos ligados diretamente aos autores, a terceiros ou a pessoas nao claramente vinculadas.",
     "Se houver litisconsorcio, diferencie documentos, pedidos, danos e lacunas por autor.",
     "Se houver divergencia entre comprador, pagador, beneficiario, reclamante ou destinatario de estorno, destaque isso de forma objetiva.",
+    "Evite repeticao artificial. Nao replique a mesma limitacao, ressalva ou ausencia de prova em varios campos com a mesma redacao.",
+    "Quando a mesma limitacao afetar varios pontos, consolide isso preferencialmente em alertas_de_nao_conclusao, integridade_tecnica_arquivos.limitacoes_da_analise ou em uma justificativa central.",
+    "Prefira arrays vazios e textos curtos a repetir frases genericas identicas em secoes diferentes.",
     "Responda apenas com JSON estrito, sem markdown fora dos campos e sem comentarios extras.",
     "Todos os campos obrigatorios devem existir, ainda que com arrays vazios, null quando previsto, ou textos prudentes.",
     "Use exatamente os enums exigidos pelo schema.",
@@ -73,180 +76,9 @@ export function buildPreAnalysisUserPrompt(context: string) {
     "28. Monte priorizacao_estrategica com urgencia operacional e acao sugerida para a equipe de defesa.",
     "29. Se houver emenda inicial, alegacao nova ou fato superveniente, registre em fatos_supervenientes_ou_da_emenda.",
     "30. Nao analise conformidade da contestacao, salvo se houver texto de defesa explicitamente presente no contexto.",
-    "Se algo nao puder ser aferido com o material disponivel, use formulacoes como: nao foi possivel verificar com os documentos disponiveis, depende de validacao humana, a partir do texto extraido.",
-    "Exemplo de formato valido:",
-    JSON.stringify(
-      {
-        resumo_executivo:
-          "A narrativa autoral apresenta suporte documental parcial, com pontos de aderencia fatico-documental e lacunas relevantes de titularidade, individualizacao e extensao dos pedidos.",
-        matriz_final_confronto: {
-          o_que_autor_narra: ["O autor afirma ter contratado servico e sofrido falha posterior com prejuizo material e moral."],
-          o_que_documentos_provam: ["Os documentos sugerem existencia de interacao comercial e tentativa posterior de suporte."],
-          o_que_documentos_nao_provam: ["Nao foi possivel verificar com os documentos disponiveis a extensao integral do dano alegado."],
-          o_que_pode_ser_explorado_pela_defesa: ["Explorar a distancia entre a narrativa ampla da inicial e o suporte documental efetivamente identificado."]
-        },
-        analise_narrativa_vs_documentos: {
-          documentos_embasam_narrativa: {
-            conclusao: "parcialmente",
-            justificativa:
-              "Parte da sequencia fatico-documental encontra apoio nos anexos, mas subsistem lacunas de titularidade, cronologia e correlacao integral com os fatos narrados.",
-            pontos_fortes: ["Existem registros documentais de interacao relacionada ao caso."],
-            lacunas: ["Nem todos os eventos narrados foram comprovados documentalmente."]
-          },
-          documentos_embasam_pedidos: {
-            conclusao: "parcialmente",
-            justificativa:
-              "Ha algum suporte para pedidos economicos basicos, mas nao para toda a extensao indenizatoria pretendida.",
-            pedidos_sustentados: ["Restituicao de valor minimamente documentado, se houver comprovante aderente."],
-            pedidos_nao_sustentados_ou_fracos: ["Dano moral sem base fatico-individualizada suficiente."]
-          }
-        },
-        analise_individualizada_por_autor: [],
-        cadeia_negocial: {
-          quem_comprou: null,
-          quem_pagou: null,
-          quem_viajou_ou_seria_beneficiario: null,
-          quem_reclamou_ou_solicitou_suporte: null,
-          quem_recebeu_ou_deveria_receber_estorno: null,
-          divergencias_entre_pessoas: []
-        },
-        cronologia: {
-          eventos_identificados: [],
-          inconsistencias_temporais: [],
-          eventos_sem_prova_temporal: []
-        },
-        coerencia_entre_documentos: {
-          nomes_divergentes: [],
-          datas_divergentes: [],
-          valores_divergentes: [],
-          codigos_localizadores_divergentes: [],
-          emails_telefones_ou_identificadores_divergentes: [],
-          observacoes: "Coerencia interna analisada apenas a partir dos documentos disponiveis."
-        },
-        analise_por_tipo_documental: {
-          procuracao: {
-            existe: false,
-            regularidade_formal: "Nao foi possivel verificar com os documentos disponiveis.",
-            assinatura_compatibilidade: "nao_verificavel",
-            pontos_de_atencao: []
-          },
-          documento_identidade: {
-            existe: false,
-            compatibilidade_com_parte: "Nao foi possivel verificar com os documentos disponiveis.",
-            sinais_de_edicao_ou_layout_incompativel: [],
-            pontos_de_atencao: []
-          },
-          comprovante_endereco: {
-            existe: false,
-            aderencia_ao_nome_da_parte: "Nao foi possivel verificar com os documentos disponiveis.",
-            aderencia_ao_endereco_da_inicial: "Nao foi possivel verificar com os documentos disponiveis.",
-            sinais_de_edicao_ou_layout_incompativel: [],
-            pontos_de_atencao: []
-          },
-          comprovantes_pagamento: {
-            existem: false,
-            aderencia_ao_nome_da_parte: "Nao foi possivel verificar com os documentos disponiveis.",
-            datas_valores_identificados: [],
-            sinais_de_edicao_ou_layout_incompativel: [],
-            pontos_de_atencao: []
-          },
-          prints_tela: {
-            existem: false,
-            compatibilidade_com_plataforma_alegada: "Nao foi possivel verificar com os documentos disponiveis.",
-            qualidade_probat\u00f3ria: "inconclusiva",
-            sinais_de_edicao_ou_recorte: [],
-            pontos_de_atencao: []
-          },
-          outros_documentos: []
-        },
-        mapa_documental_autor: [
-          {
-            documento_referencia: "arquivo_ou_doc_identificado_no_contexto",
-            tipo_documento: "print, comprovante, identidade ou outro",
-            titular_ou_emitente: null,
-            vinculo_subjetivo: "nao_identificado",
-            peso_probatorio: "inconclusivo",
-            achados_principais: ["Achado sintetico com base no texto extraido."],
-            impacto_para_defesa: "Impacto defensivo objetivo e prudente.",
-            pontos_de_atencao: [],
-            referencia_trecho_ou_contexto: null
-          }
-        ],
-        priorizacao_estrategica: [
-          {
-            titulo: "Impugnar documento com baixa aderencia subjetiva",
-            prioridade: "importante",
-            motivo: "Ha indicio de documento ligado a terceiro ou sem vinculacao clara com os autores.",
-            acao_sugerida: "Conferir documento, impugnar pertinencia subjetiva e cruzar com dados internos da operacao.",
-            referencia_documental: ["arquivo_ou_doc_identificado_no_contexto"]
-          }
-        ],
-        fatos_supervenientes_ou_da_emenda: [],
-        suficiencia_probatoria: {
-          conclusao: "parcial",
-          provas_fortes: [],
-          provas_fracas_ou_unilaterais: ["Prints ou declaracoes sem lastro complementar, se esse for o caso do contexto."],
-          documentos_chave_ausentes: ["Documento interno de transacao ou log operacional, se pertinente ao caso."],
-          observacoes: "A conclusao deve ser proporcional ao que foi efetivamente anexado."
-        },
-        pedido_indenizatorio: {
-          dano_material_tem_prova_minima: "inconclusivo",
-          valor_pedido_tem_suporte_documental: "inconclusivo",
-          dano_moral_tem_base_fatica_individualizada: "nao",
-          despesas_extraordinarias_comprovadas: [],
-          lacunas: ["Nao foi possivel verificar com os documentos disponiveis a base integral do pedido indenizatorio."]
-        },
-        compatibilidade_canal_documento: {
-          alegacoes_vs_canais_comprovados: [],
-          prova_de_contratacao: [],
-          prova_de_tentativa: [],
-          prova_de_oferta_ou_pre_reserva: [],
-          mera_consulta_ou_print_inconclusivo: []
-        },
-        integridade_tecnica_arquivos: {
-          sinais_possiveis_de_manipulacao: [],
-          limitacoes_da_analise: [
-            "Analise restrita ao texto extraido e aos metadados disponibilizados.",
-            "Nao ha OCR ou pericia visual robusta nesta etapa."
-          ],
-          necessita_validacao_humana: true
-        },
-        representacao_processual: {
-          regularidade_aparente: "inconclusiva",
-          pontos_de_atencao: [],
-          autores_sem_procuracao_ou_documento: []
-        },
-        espacialidade: {
-          cidades_enderecos_identificados: [],
-          inconsistencias_territoriais: [],
-          observacoes: "Registrar apenas elementos territoriais efetivamente encontrados."
-        },
-        indicios_litigancia_padronizada: {
-          indicios: [],
-          elementos_recorrentes: [],
-          observacoes: "Nao inferir padronizacao sem apoio concreto no proprio material do caso."
-        },
-        pontos_exploraveis_defesa: [
-          {
-            ponto: "Fragilidade de correlacao integral entre narrativa e anexos",
-            categoria: "prova_insuficiente",
-            relevancia: "alta",
-            explorabilidade: "alta",
-            necessita_validacao_humana: false,
-            justificativa:
-              "Os documentos podem sustentar apenas parte dos fatos, sem cobrir toda a narrativa ou todos os pedidos."
-          }
-        ],
-        documentos_internos_recomendados_para_defesa: [
-          "Historico interno de atendimento, logs transacionais, comprovacao de fluxo de cancelamento, registro de titularidade e comunicacoes internas pertinentes."
-        ],
-        alertas_de_nao_conclusao: [
-          "Quando nao houver suporte documental suficiente, registrar expressamente a impossibilidade de verificacao."
-        ]
-      },
-      null,
-      2
-    ),
+    "Se algo nao puder ser aferido com o material disponivel, use formulacoes prudentes e curtas, evitando repetir a mesma frase em varios campos.",
+    "Quando a mesma ressalva afetar varios blocos, concentre isso em alertas_de_nao_conclusao e integridade_tecnica_arquivos.limitacoes_da_analise.",
+    "Nao preencha campos com boilerplate desnecessario. Se nao houver item especifico, prefira arrays vazios, null quando cabivel e justificativas enxutas.",
     "Contexto do caso:",
     context
   ].join("\n\n");

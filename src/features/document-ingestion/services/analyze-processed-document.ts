@@ -7,7 +7,6 @@ import {
   DOCUMENT_ANALYSIS_PROMPT_VERSION
 } from "@/features/document-ingestion/lib/document-analysis-prompt";
 import { structuredDocumentAnalysisSchema } from "@/features/document-ingestion/lib/document-analysis-schema";
-import { createPdfParseInstance } from "@/features/document-ingestion/lib/pdf-parse-runtime";
 import type { StructuredDocumentAnalysis } from "@/features/document-ingestion/types";
 import type { CaseDocument } from "@/types/database";
 
@@ -43,9 +42,26 @@ function toBase64(buffer: Buffer) {
 async function buildVisualBlocks(
   document: CaseDocument,
   fileBuffer: Buffer,
-  parserType: string | null,
-  parserMetadata: Record<string, unknown>
+  parserType: string | null
 ) {
+  if (document.mime_type?.includes("pdf")) {
+    return [
+      {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: toBase64(fileBuffer)
+        },
+        title: document.file_name ?? document.document_type,
+        context:
+          parserType === "pdf_hybrid" || parserType === "pdf_ocr"
+            ? "PDF juridico com conteudo textual e visual. Priorize leitura integral do documento."
+            : "PDF juridico enviado integralmente para leitura do conteudo textual e visual."
+      } satisfies AnthropicContentBlock
+    ];
+  }
+
   if (document.mime_type === "image/jpeg" || document.mime_type === "image/png") {
     return [
       {
@@ -59,63 +75,14 @@ async function buildVisualBlocks(
     ];
   }
 
-  if (!document.mime_type?.includes("pdf")) {
-    return [];
-  }
-
-  if (!["pdf_ocr", "pdf_hybrid"].includes(parserType ?? "")) {
-    return [];
-  }
-
-  const parser = await createPdfParseInstance(fileBuffer);
-
-  try {
-    const pageStrategies = Array.isArray(parserMetadata.page_strategies)
-      ? parserMetadata.page_strategies
-      : [];
-    const pagesToPreview = pageStrategies
-      .filter(
-        (item): item is { page_number: number; strategy: string } =>
-          typeof item === "object" &&
-          item !== null &&
-          "page_number" in item &&
-          typeof (item as { page_number?: unknown }).page_number === "number" &&
-          "strategy" in item &&
-          typeof (item as { strategy?: unknown }).strategy === "string"
-      )
-      .filter((item) => item.strategy === "ocr")
-      .slice(0, 2)
-      .map((item) => item.page_number);
-
-    const screenshotResult = await parser.getScreenshot({
-      partial: pagesToPreview.length > 0 ? pagesToPreview : [1],
-      desiredWidth: 1440,
-      imageDataUrl: false,
-      imageBuffer: true
-    });
-
-    return screenshotResult.pages.slice(0, 2).map(
-      (page) =>
-        ({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: "image/png",
-            data: Buffer.from(page.data).toString("base64")
-          }
-        }) satisfies AnthropicContentBlock
-    );
-  } finally {
-    await parser.destroy();
-  }
+  return [];
 }
 
 export async function analyzeProcessedDocument({
   document,
   extractedText,
   fileBuffer,
-  parserType,
-  parserMetadata
+  parserType
 }: {
   document: CaseDocument;
   extractedText: string;
@@ -132,7 +99,7 @@ export async function analyzeProcessedDocument({
   }
 
   try {
-    const visualBlocks = await buildVisualBlocks(document, fileBuffer, parserType, parserMetadata);
+    const visualBlocks = await buildVisualBlocks(document, fileBuffer, parserType);
     const userContent: AnthropicContentBlock[] = [
       {
         type: "text",

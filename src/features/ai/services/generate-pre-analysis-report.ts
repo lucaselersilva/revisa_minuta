@@ -1,5 +1,5 @@
 import { buildPreAnalysisSystemPrompt, buildPreAnalysisUserPrompt, PRE_ANALYSIS_PROMPT_VERSION } from "@/features/ai/prompts/pre-analysis-prompt";
-import { generateStructuredAnthropicResponse } from "@/features/ai/clients/anthropic-client";
+import { generateAnthropicResponse, generateStructuredAnthropicResponse, type AnthropicContentBlock } from "@/features/ai/clients/anthropic-client";
 import { renderPreAnalysisMarkdown } from "@/features/ai/services/render-pre-analysis-markdown";
 import { normalizePreAnalysisReportPayload } from "@/features/ai/types/pre-analysis-report";
 import { getCaseById } from "@/features/cases/queries/get-cases";
@@ -11,6 +11,111 @@ import { writeAuditLog } from "@/services/audit-log-service";
 import type { Profile } from "@/types/database";
 
 const PRE_ANALYSIS_MAX_TOKENS = 7000;
+const PRE_ANALYSIS_MULTIMODAL_MAX_DOCS = 8;
+const PRE_ANALYSIS_MULTIMODAL_MAX_TOTAL_BYTES = 24 * 1024 * 1024;
+
+function documentPriority(documentType: string) {
+  if (documentType === "initial_petition") return 0;
+  if (documentType === "initial_amendment") return 1;
+  if (documentType === "author_documents") return 2;
+  return 3;
+}
+
+async function buildPreAnalysisAnthropicContent({
+  promptContext,
+  snapshot,
+  supabase
+}: {
+  promptContext: string;
+  snapshot: NonNullable<Awaited<ReturnType<typeof getPreAnalysisSnapshot>>>;
+  supabase: ReturnType<typeof createAdminClient>;
+}) {
+  const processedDocuments = snapshot.eligibleDocuments
+    .filter((item) => item.ingestion?.status === "processed")
+    .sort((left, right) => {
+      const byType = documentPriority(left.document.document_type) - documentPriority(right.document.document_type);
+      if (byType !== 0) {
+        return byType;
+      }
+
+      return (right.document.file_size ?? 0) - (left.document.file_size ?? 0);
+    });
+
+  const multimodalBlocks: AnthropicContentBlock[] = [];
+  const multimodalInventory: string[] = [];
+  let totalBytes = 0;
+
+  for (const item of processedDocuments) {
+    if (multimodalBlocks.length >= PRE_ANALYSIS_MULTIMODAL_MAX_DOCS) {
+      break;
+    }
+
+    const mimeType = item.document.mime_type ?? "";
+    const supportsMultimodal =
+      mimeType === "application/pdf" || mimeType === "image/png" || mimeType === "image/jpeg";
+
+    if (!supportsMultimodal) {
+      continue;
+    }
+
+    const downloadResult = await supabase.storage.from("aa-case-files").download(item.document.file_path);
+    if (downloadResult.error) {
+      continue;
+    }
+
+    const buffer = Buffer.from(await downloadResult.data.arrayBuffer());
+    if (totalBytes + buffer.length > PRE_ANALYSIS_MULTIMODAL_MAX_TOTAL_BYTES) {
+      continue;
+    }
+
+    totalBytes += buffer.length;
+    multimodalInventory.push(
+      `${item.document.id} | ${item.document.file_name ?? item.document.document_type} | ${item.document.document_type}`
+    );
+
+    if (mimeType === "application/pdf") {
+      multimodalBlocks.push({
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: buffer.toString("base64")
+        },
+        title: item.document.file_name ?? item.document.document_type,
+        context: `Documento juridico da fase inicial. ID ${item.document.id}. Tipo ${item.document.document_type}.`
+      });
+      continue;
+    }
+
+    multimodalBlocks.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: mimeType as "image/png" | "image/jpeg",
+        data: buffer.toString("base64")
+      }
+    });
+  }
+
+  const textBlockParts = [
+    multimodalInventory.length
+      ? [
+          "[Documentos multimodais enviados integralmente a seguir]",
+          ...multimodalInventory.map((item, index) => `${index + 1}. ${item}`),
+          ""
+        ].join("\n")
+      : "",
+    buildPreAnalysisUserPrompt(promptContext)
+  ].filter(Boolean);
+
+  return [
+    ...multimodalBlocks,
+    {
+      type: "text",
+      text: textBlockParts.join("\n")
+    } satisfies AnthropicContentBlock
+  ];
+}
 
 function extractJsonPayload(text: string) {
   const trimmed = text.trim();
@@ -86,6 +191,26 @@ function formatPreAnalysisFailureMessage(error: unknown) {
   return message;
 }
 
+async function generatePreAnalysisAnthropicReport(promptContext: string, userContent: AnthropicContentBlock[]) {
+  try {
+    return await generateAnthropicResponse({
+      systemPrompt: buildPreAnalysisSystemPrompt(),
+      userContent,
+      maxTokens: PRE_ANALYSIS_MAX_TOKENS
+    });
+  } catch (error) {
+    if (userContent.length <= 1) {
+      throw error;
+    }
+
+    return generateStructuredAnthropicResponse({
+      systemPrompt: buildPreAnalysisSystemPrompt(),
+      userPrompt: buildPreAnalysisUserPrompt(promptContext),
+      maxTokens: PRE_ANALYSIS_MAX_TOKENS
+    });
+  }
+}
+
 export async function generatePreAnalysisReport(caseId: string, profile: Profile) {
   const [caseItem, snapshot, context] = await Promise.all([
     getCaseById(caseId),
@@ -105,11 +230,13 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
   const nextVersion = (snapshot.reports[0]?.version ?? 0) + 1;
 
   try {
-    const response = await generateStructuredAnthropicResponse({
-      systemPrompt: buildPreAnalysisSystemPrompt(),
-      userPrompt: buildPreAnalysisUserPrompt(context.promptContext),
-      maxTokens: PRE_ANALYSIS_MAX_TOKENS
+    const userContent = await buildPreAnalysisAnthropicContent({
+      promptContext: context.promptContext,
+      snapshot,
+      supabase
     });
+
+    const response = await generatePreAnalysisAnthropicReport(context.promptContext, userContent);
 
     const parsedJson = await parsePreAnalysisResponse(response.text);
     const report = normalizePreAnalysisReportPayload(parsedJson);

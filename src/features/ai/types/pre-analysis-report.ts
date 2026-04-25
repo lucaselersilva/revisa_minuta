@@ -227,6 +227,13 @@ function cleanNullableText(value: unknown): string | null {
   return text || null;
 }
 
+const GENERIC_REPETITIVE_TEXTS = new Set([
+  "Nao ha elementos suficientes registrados.",
+  "Nao foi possivel verificar com os documentos disponiveis.",
+  "Inconclusivo com o material atual.",
+  "Registro convertido para a estrutura atual."
+]);
+
 function pickFirstText(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = cleanText(record[key]);
@@ -238,14 +245,31 @@ function pickFirstText(record: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
-function prudentialText(value: unknown, fallback = "Nao foi possivel verificar com os documentos disponiveis.") {
+function prudentialText(value: unknown, fallback = "") {
   const text = cleanText(value);
   return text || fallback;
 }
 
+function uniqueCleanStrings(items: string[]) {
+  return [...new Set(items.map((item) => cleanText(item)).filter(Boolean))];
+}
+
+function compactGenericList(items: string[]) {
+  const uniqueItems = uniqueCleanStrings(items);
+  const genericItems = uniqueItems.filter((item) => GENERIC_REPETITIVE_TEXTS.has(item));
+  const specificItems = uniqueItems.filter((item) => !GENERIC_REPETITIVE_TEXTS.has(item));
+
+  if (specificItems.length > 0) {
+    return specificItems;
+  }
+
+  return genericItems.slice(0, 1);
+}
+
 function toStringArray(value: unknown) {
   if (Array.isArray(value)) {
-    return value
+    return compactGenericList(
+      value
       .map((item) => {
         if (typeof item === "string") {
           return cleanText(item);
@@ -268,7 +292,8 @@ function toStringArray(value: unknown) {
 
         return "";
       })
-      .filter(Boolean);
+      .filter(Boolean)
+    );
   }
 
   if (isRecord(value)) {
@@ -282,7 +307,7 @@ function toStringArray(value: unknown) {
   }
 
   const single = cleanText(value);
-  return single ? [single] : [];
+  return single ? compactGenericList([single]) : [];
 }
 
 function toBoolean(value: unknown) {
@@ -466,7 +491,7 @@ function normalizeIndividualAuthors(value: unknown, source: Record<string, unkno
           pedidos_vinculados: toStringArray(item.pedidos_vinculados ?? item.pedidos),
           danos_individualizados: toStringArray(item.danos_individualizados ?? item.danos),
           lacunas_individualizacao: toStringArray(item.lacunas_individualizacao ?? item.lacunas),
-          observacoes: prudentialText(item.observacoes ?? item.observacao)
+          observacoes: prudentialText(item.observacoes ?? item.observacao, "Analise sem observacoes adicionais.")
         };
       })
       .filter(Boolean) as PreAnalysisReportOutput["analise_individualizada_por_autor"];
@@ -484,7 +509,7 @@ function normalizeIndividualAuthors(value: unknown, source: Record<string, unkno
         documentos_vinculados: [],
         pedidos_vinculados: [],
         danos_individualizados: [],
-        lacunas_individualizacao: ["Nao foi possivel verificar com os documentos disponiveis a individualizacao completa."],
+        lacunas_individualizacao: [],
         observacoes: "Entrada gerada a partir dos metadados de partes."
       };
     })
@@ -753,7 +778,10 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
   const legacyDocuments = buildLegacyRecommendedDocuments(source);
 
   return preAnalysisReportSchema.parse({
-    resumo_executivo: prudentialText(source.resumo_executivo ?? legacySummary),
+    resumo_executivo: prudentialText(
+      source.resumo_executivo ?? legacySummary,
+      "Analise pre-defensiva gerada a partir do material processado nesta etapa."
+    ),
     matriz_final_confronto: {
       o_que_autor_narra: toStringArray(matriz.o_que_autor_narra ?? source.fatos_relevantes),
       o_que_documentos_provam: toStringArray(matriz.o_que_documentos_provam ?? legacyFindings),
@@ -767,7 +795,7 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
         conclusao: normalizeYesPartialNo(embasamNarrativa.conclusao),
         justificativa: prudentialText(
           embasamNarrativa.justificativa,
-          "Nao foi possivel verificar com os documentos disponiveis o grau integral de aderencia entre narrativa e anexos."
+          "A aderencia entre narrativa e anexos ficou apenas parcialmente verificavel com o material atual."
         ),
         pontos_fortes: toStringArray(embasamNarrativa.pontos_fortes ?? legacyFindings.slice(0, 3)),
         lacunas: toStringArray(embasamNarrativa.lacunas ?? source.lacunas_iniciais)
@@ -776,7 +804,7 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
         conclusao: normalizeYesPartialNo(embasamPedidos.conclusao),
         justificativa: prudentialText(
           embasamPedidos.justificativa,
-          "Nao foi possivel verificar com os documentos disponiveis o suporte integral dos pedidos formulados."
+          "O suporte documental dos pedidos ficou apenas parcialmente verificavel com o material atual."
         ),
         pedidos_sustentados: toStringArray(embasamPedidos.pedidos_sustentados),
         pedidos_nao_sustentados_ou_fracos: toStringArray(
@@ -804,39 +832,54 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
       ),
       observacoes: prudentialText(
         coerencia.observacoes,
-        "Coerencia interna analisada apenas a partir dos documentos disponiveis."
+        "Coerencia interna analisada a partir do material processado."
       )
     },
     analise_por_tipo_documental: {
       procuracao: {
         existe: toBoolean(procuracao.existe),
-        regularidade_formal: prudentialText(procuracao.regularidade_formal),
+        regularidade_formal: prudentialText(procuracao.regularidade_formal, "Inconclusivo com o material atual."),
         assinatura_compatibilidade: normalizeAssinaturaCompatibilidade(procuracao.assinatura_compatibilidade),
         pontos_de_atencao: toStringArray(procuracao.pontos_de_atencao)
       },
       documento_identidade: {
         existe: toBoolean(identidade.existe),
-        compatibilidade_com_parte: prudentialText(identidade.compatibilidade_com_parte),
+        compatibilidade_com_parte: prudentialText(
+          identidade.compatibilidade_com_parte,
+          "Inconclusivo com o material atual."
+        ),
         sinais_de_edicao_ou_layout_incompativel: toStringArray(identidade.sinais_de_edicao_ou_layout_incompativel),
         pontos_de_atencao: toStringArray(identidade.pontos_de_atencao)
       },
       comprovante_endereco: {
         existe: toBoolean(endereco.existe),
-        aderencia_ao_nome_da_parte: prudentialText(endereco.aderencia_ao_nome_da_parte),
-        aderencia_ao_endereco_da_inicial: prudentialText(endereco.aderencia_ao_endereco_da_inicial),
+        aderencia_ao_nome_da_parte: prudentialText(
+          endereco.aderencia_ao_nome_da_parte,
+          "Inconclusivo com o material atual."
+        ),
+        aderencia_ao_endereco_da_inicial: prudentialText(
+          endereco.aderencia_ao_endereco_da_inicial,
+          "Inconclusivo com o material atual."
+        ),
         sinais_de_edicao_ou_layout_incompativel: toStringArray(endereco.sinais_de_edicao_ou_layout_incompativel),
         pontos_de_atencao: toStringArray(endereco.pontos_de_atencao)
       },
       comprovantes_pagamento: {
         existem: toBoolean(pagamentos.existem),
-        aderencia_ao_nome_da_parte: prudentialText(pagamentos.aderencia_ao_nome_da_parte),
+        aderencia_ao_nome_da_parte: prudentialText(
+          pagamentos.aderencia_ao_nome_da_parte,
+          "Inconclusivo com o material atual."
+        ),
         datas_valores_identificados: toStringArray(pagamentos.datas_valores_identificados),
         sinais_de_edicao_ou_layout_incompativel: toStringArray(pagamentos.sinais_de_edicao_ou_layout_incompativel),
         pontos_de_atencao: toStringArray(pagamentos.pontos_de_atencao)
       },
       prints_tela: {
         existem: toBoolean(prints.existem),
-        compatibilidade_com_plataforma_alegada: prudentialText(prints.compatibilidade_com_plataforma_alegada),
+        compatibilidade_com_plataforma_alegada: prudentialText(
+          prints.compatibilidade_com_plataforma_alegada,
+          "Inconclusivo com o material atual."
+        ),
         ["qualidade_probat\u00f3ria"]: normalizeQualidadePrint(prints["qualidade_probat\u00f3ria"] ?? prints.qualidade_probatoria),
         sinais_de_edicao_ou_recorte: toStringArray(prints.sinais_de_edicao_ou_recorte),
         pontos_de_atencao: toStringArray(prints.pontos_de_atencao)
@@ -853,7 +896,7 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
       documentos_chave_ausentes: toStringArray(suficiencia.documentos_chave_ausentes ?? legacyDocuments),
       observacoes: prudentialText(
         suficiencia.observacoes,
-        "A suficiencia probatoria foi estimada apenas a partir do material processado nesta etapa."
+        "A suficiencia probatoria foi estimada a partir do material processado nesta etapa."
       )
     },
     pedido_indenizatorio: {
@@ -877,8 +920,8 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
       limitacoes_da_analise: toStringArray(integridade.limitacoes_da_analise).length
         ? toStringArray(integridade.limitacoes_da_analise)
         : [
-            "Analise restrita ao texto extraido e aos metadados disponibilizados.",
-            "Nao ha OCR nem visao computacional robusta nesta etapa."
+          "Analise restrita ao texto extraido e aos metadados disponibilizados.",
+            "Ainda pode haver perda de detalhes visuais em documentos complexos."
           ],
       necessita_validacao_humana:
         typeof integridade.necessita_validacao_humana === "boolean"
@@ -895,7 +938,7 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
       inconsistencias_territoriais: toStringArray(espacialidade.inconsistencias_territoriais),
       observacoes: prudentialText(
         espacialidade.observacoes,
-        "Elementos territoriais avaliados apenas a partir dos documentos disponiveis."
+        "Elementos territoriais avaliados a partir do material processado."
       )
     },
     indicios_litigancia_padronizada: {

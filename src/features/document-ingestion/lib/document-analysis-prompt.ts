@@ -1,6 +1,6 @@
 import type { CaseDocument } from "@/types/database";
 
-export const DOCUMENT_ANALYSIS_PROMPT_VERSION = "v1";
+export const DOCUMENT_ANALYSIS_PROMPT_VERSION = "v2_pdf_integral";
 
 export function buildDocumentAnalysisSystemPrompt() {
   return [
@@ -9,6 +9,7 @@ export function buildDocumentAnalysisSystemPrompt() {
     "Analise apenas o conteudo fornecido.",
     "Nao invente fatos, datas, valores, pessoas ou autenticidade que nao estejam sustentados pelo documento.",
     "Se houver incerteza, seja prudente e reflita isso na confianca geral.",
+    "Quando o documento for um PDF completo, aproveite tambem os elementos visuais, tabelas, prints, comprovantes e layout presentes nas paginas.",
     "Responda apenas com JSON estrito.",
     "Use inferred_document_kind apenas entre: email_print, whatsapp_print, financial_record, platform_print, identity_document, procuration, travel_record, general_attachment.",
     "Use severity e confidence apenas entre: low, medium, high."

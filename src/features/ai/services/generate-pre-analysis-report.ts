@@ -14,6 +14,24 @@ const PRE_ANALYSIS_MAX_TOKENS = 7000;
 const PRE_ANALYSIS_MULTIMODAL_MAX_DOCS = 8;
 const PRE_ANALYSIS_MULTIMODAL_MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 
+type PreAnalysisFailureDiagnostics = {
+  rawResponseText?: string | null;
+  parsedJson?: unknown;
+  normalizationError?: string | null;
+  repairAttempted?: boolean;
+  repairedJson?: unknown;
+};
+
+class PreAnalysisGenerationError extends Error {
+  diagnostics: PreAnalysisFailureDiagnostics;
+
+  constructor(message: string, diagnostics: PreAnalysisFailureDiagnostics = {}) {
+    super(message);
+    this.name = "PreAnalysisGenerationError";
+    this.diagnostics = diagnostics;
+  }
+}
+
 function documentPriority(documentType: string) {
   if (documentType === "initial_petition") return 0;
   if (documentType === "initial_amendment") return 1;
@@ -204,8 +222,37 @@ async function normalizePreAnalysisResponse(text: string) {
     return normalizePreAnalysisReportPayload(parsedJson);
   } catch (error) {
     const failureDetail = error instanceof Error ? error.message : "Falha desconhecida na normalizacao do laudo.";
-    const repairedJson = await repairPreAnalysisStructure(text, failureDetail);
-    return normalizePreAnalysisReportPayload(repairedJson);
+    try {
+      const repairedJson = await repairPreAnalysisStructure(text, failureDetail);
+      try {
+        return normalizePreAnalysisReportPayload(repairedJson);
+      } catch (repairError) {
+        throw new PreAnalysisGenerationError(
+          "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
+          {
+            rawResponseText: text,
+            parsedJson,
+            normalizationError: repairError instanceof Error ? repairError.message : failureDetail,
+            repairAttempted: true,
+            repairedJson
+          }
+        );
+      }
+    } catch (repairPipelineError) {
+      if (repairPipelineError instanceof PreAnalysisGenerationError) {
+        throw repairPipelineError;
+      }
+
+      throw new PreAnalysisGenerationError(
+        "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
+        {
+          rawResponseText: text,
+          parsedJson,
+          normalizationError: failureDetail,
+          repairAttempted: true
+        }
+      );
+    }
   }
 }
 
@@ -229,6 +276,48 @@ function formatPreAnalysisFailureMessage(error: unknown) {
   }
 
   return message;
+}
+
+function buildPreAnalysisFailureMarkdown({
+  failureMessage,
+  diagnostics
+}: {
+  failureMessage: string;
+  diagnostics?: PreAnalysisFailureDiagnostics;
+}) {
+  const lines = [failureMessage];
+
+  if (diagnostics?.normalizationError) {
+    lines.push("");
+    lines.push("=== DETALHE DA NORMALIZACAO ===");
+    lines.push(diagnostics.normalizationError);
+  }
+
+  if (diagnostics?.parsedJson) {
+    lines.push("");
+    lines.push("=== JSON PARSEADO ANTES DA NORMALIZACAO ===");
+    lines.push(JSON.stringify(diagnostics.parsedJson, null, 2));
+  }
+
+  if (diagnostics?.repairAttempted) {
+    lines.push("");
+    lines.push("=== REPARO ESTRUTURAL TENTADO ===");
+    lines.push("Sim");
+  }
+
+  if (diagnostics?.repairedJson) {
+    lines.push("");
+    lines.push("=== JSON REESTRUTURADO PELO REPARO ===");
+    lines.push(JSON.stringify(diagnostics.repairedJson, null, 2));
+  }
+
+  if (diagnostics?.rawResponseText) {
+    lines.push("");
+    lines.push("=== RESPOSTA CRUA DA IA ===");
+    lines.push(diagnostics.rawResponseText);
+  }
+
+  return lines.join("\n");
 }
 
 async function generatePreAnalysisAnthropicReport(promptContext: string, userContent: AnthropicContentBlock[]) {
@@ -322,6 +411,11 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
     return { ok: true, message: nextVersion === 1 ? "Laudo previo gerado." : "Nova versao do laudo gerada." };
   } catch (error) {
     const failureMessage = formatPreAnalysisFailureMessage(error);
+    const diagnostics = error instanceof PreAnalysisGenerationError ? error.diagnostics : undefined;
+    const failureMarkdown = buildPreAnalysisFailureMarkdown({
+      failureMessage,
+      diagnostics
+    });
 
     await supabase.from("AA_pre_analysis_reports").insert({
       office_id: profile.office_id,
@@ -332,10 +426,13 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
       model_name: process.env.ANTHROPIC_MODEL_NAME || "claude-sonnet-4-20250514",
       input_summary: {
         ...context.inputSummary,
-        error_message: failureMessage
+        error_message: failureMessage,
+        normalization_error: diagnostics?.normalizationError ?? null,
+        repair_attempted: diagnostics?.repairAttempted ?? false,
+        raw_response_available: Boolean(diagnostics?.rawResponseText)
       },
       prompt_version: PRE_ANALYSIS_PROMPT_VERSION,
-      report_markdown: failureMessage,
+      report_markdown: failureMarkdown,
       generated_by: profile.id,
       generated_at: new Date().toISOString()
     });
@@ -344,7 +441,12 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
       caseId,
       action: "pre_analysis.report.failed",
       profile,
-      metadata: { version: nextVersion, error: failureMessage }
+      metadata: {
+        version: nextVersion,
+        error: failureMessage,
+        normalization_error: diagnostics?.normalizationError ?? null,
+        repair_attempted: diagnostics?.repairAttempted ?? false
+      }
     });
 
     return {

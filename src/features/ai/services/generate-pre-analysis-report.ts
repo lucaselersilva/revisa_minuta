@@ -158,6 +158,29 @@ async function repairPreAnalysisJson(rawText: string) {
   return tryParseJsonPayload(repairResponse.text);
 }
 
+async function repairPreAnalysisStructure(rawText: string, failureDetail: string) {
+  const repairResponse = await generateStructuredAnthropicResponse({
+    systemPrompt: [
+      "Voce atua como reparador tecnico de estrutura JSON para um laudo juridico operacional.",
+      "Recebera uma resposta que ja pode estar em JSON, mas nao aderiu corretamente ao formato esperado.",
+      "Sua tarefa e devolver apenas um JSON valido e estruturalmente compativel com o laudo previo do sistema.",
+      "Nao resuma, nao explique, nao adicione markdown e nao invente fatos ausentes.",
+      "Preserve o conteudo material existente, reorganizando apenas o necessario para aderir ao formato esperado.",
+      "Mantenha todos os enums em valores validos e use arrays vazios, null ou textos prudentes quando faltar base suficiente."
+    ].join(" "),
+    userPrompt: [
+      "Reestruture o conteudo abaixo para um JSON estrito e compativel com o laudo previo esperado.",
+      "Falha detectada ao normalizar o payload atual:",
+      failureDetail,
+      "Retorne somente o JSON reestruturado.",
+      rawText
+    ].join("\n\n"),
+    maxTokens: PRE_ANALYSIS_MAX_TOKENS
+  });
+
+  return tryParseJsonPayload(repairResponse.text);
+}
+
 async function parsePreAnalysisResponse(text: string) {
   try {
     return tryParseJsonPayload(text);
@@ -171,6 +194,18 @@ async function parsePreAnalysisResponse(text: string) {
     }
 
     return repairPreAnalysisJson(text);
+  }
+}
+
+async function normalizePreAnalysisResponse(text: string) {
+  const parsedJson = await parsePreAnalysisResponse(text);
+
+  try {
+    return normalizePreAnalysisReportPayload(parsedJson);
+  } catch (error) {
+    const failureDetail = error instanceof Error ? error.message : "Falha desconhecida na normalizacao do laudo.";
+    const repairedJson = await repairPreAnalysisStructure(text, failureDetail);
+    return normalizePreAnalysisReportPayload(repairedJson);
   }
 }
 
@@ -243,8 +278,7 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
 
     const response = await generatePreAnalysisAnthropicReport(context.promptContext, userContent);
 
-    const parsedJson = await parsePreAnalysisResponse(response.text);
-    const report = normalizePreAnalysisReportPayload(parsedJson);
+    const report = await normalizePreAnalysisResponse(response.text);
     const reportMarkdown = renderPreAnalysisMarkdown(report);
 
     const { data: createdReport, error } = await supabase

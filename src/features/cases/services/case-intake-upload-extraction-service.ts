@@ -11,6 +11,8 @@ import {
   type CaseIntakeUploadExtraction
 } from "@/features/cases/lib/case-intake-upload-schema";
 
+type ExtractedAuthor = CaseIntakeUploadExtraction["authors"][number];
+
 function extractJsonPayload(text: string) {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
@@ -40,7 +42,7 @@ function normalizeCaseNumber(rawText: string | null) {
   return rawText.trim() || null;
 }
 
-function normalizeCompanyDocument(rawText: string | null) {
+function normalizeCpfOrCnpj(rawText: string | null) {
   if (!rawText) {
     return null;
   }
@@ -58,52 +60,174 @@ function normalizeCompanyDocument(rawText: string | null) {
   return rawText.trim() || null;
 }
 
-function uniqueNames(values: string[]) {
+function normalizeCompanyDocument(rawText: string | null) {
+  return normalizeCpfOrCnpj(rawText);
+}
+
+function cleanWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function looksLikeNarrativeFragment(value: string) {
+  const lowered = value.toLocaleLowerCase("pt-BR");
+  const blockedTerms = [
+    "adquiriu",
+    "adquiriu passagens",
+    "foi surpreendida",
+    "nao poderia prever",
+    "nao teve qualquer responsabilidade",
+    "responsabilidade",
+    "dano moral",
+    "danos morais",
+    "danos materiais",
+    "companhia",
+    "empresa",
+    "condenacao",
+    "requer",
+    "pleiteia",
+    "alega",
+    "narrativa",
+    "fato",
+    "fatos",
+    "merito"
+  ];
+
+  if (blockedTerms.some((term) => lowered.includes(term))) {
+    return true;
+  }
+
+  const words = lowered.split(/\s+/).filter(Boolean);
+  const lowerWordCount = value.split(/\s+/).filter((item) => /^[a-zà-ú]/.test(item)).length;
+  if (words.length >= 3 && lowerWordCount >= 2) {
+    return true;
+  }
+
+  return false;
+}
+
+function looksLikePersonName(value: string) {
+  const cleaned = cleanWhitespace(value);
+  if (cleaned.length < 5 || cleaned.length > 120) {
+    return false;
+  }
+
+  if (looksLikeNarrativeFragment(cleaned)) {
+    return false;
+  }
+
+  const words = cleaned.split(" ").filter(Boolean);
+  if (words.length < 2 || words.length > 8) {
+    return false;
+  }
+
+  const validWords = words.every((word) => /^[A-Za-zÀ-Úà-ú'`-]+$/.test(word) && word.length >= 2);
+  if (!validWords) {
+    return false;
+  }
+
+  const capitalizedCount = words.filter((word) => /^[A-ZÀ-Ú]/.test(word)).length;
+  return capitalizedCount >= Math.max(2, words.length - 1);
+}
+
+function uniqueAuthors(values: ExtractedAuthor[]) {
   const seen = new Set<string>();
-  const result: string[] = [];
+  const result: ExtractedAuthor[] = [];
 
-  for (const value of values) {
-    const trimmed = value.trim();
-    const key = trimmed.toLocaleLowerCase("pt-BR");
+  for (const item of values) {
+    const name = cleanWhitespace(item.name);
+    if (!looksLikePersonName(name)) {
+      continue;
+    }
 
-    if (!trimmed || seen.has(key)) {
+    const key = name.toLocaleLowerCase("pt-BR");
+    if (seen.has(key)) {
       continue;
     }
 
     seen.add(key);
-    result.push(trimmed);
+    result.push({
+      name,
+      document: normalizeCpfOrCnpj(item.document)
+    });
   }
 
-  return result;
+  return result.slice(0, 8);
+}
+
+function extractAuthorsFromRegex(text: string) {
+  const authors: ExtractedAuthor[] = [];
+  const qualificationRegex =
+    /([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú'`-]+){1,6})([\s\S]{0,180}?)(?:CPF|cpf|inscrit[oa].{0,20}?CPF|portador.{0,20}?CPF)?[\s:\-ºnN]*((?:\d{3}\.?\d{3}\.?\d{3}-?\d{2})?)/g;
+
+  for (const match of text.matchAll(qualificationRegex)) {
+    const name = cleanWhitespace(match[1] ?? "");
+    const document = normalizeCpfOrCnpj(match[3] ?? null);
+    if (!looksLikePersonName(name)) {
+      continue;
+    }
+
+    authors.push({
+      name,
+      document
+    });
+  }
+
+  return uniqueAuthors(authors);
+}
+
+function extractRepresentedEntityName(text: string) {
+  const patterns = [
+    /(?:em face de|em desfavor de|requerid[ao]|promovid[ao] contra)\s+([A-ZÀ-Ú0-9][A-ZÀ-Ú0-9\s\.\-&]{4,})/i,
+    /([A-ZÀ-Ú0-9][A-ZÀ-Ú0-9\s\.\-&]{4,})\s*,?\s*(?:pessoa juridica|sociedade empresaria|empresa requerida|requerida)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return cleanWhitespace(match[1]);
+    }
+  }
+
+  return null;
 }
 
 function regexFallback(extractedText: string | null, fileName: string): CaseIntakeUploadExtraction {
   const caseNumber = normalizeCaseNumber(extractedText);
   const text = extractedText ?? "";
-  const authorMatches = Array.from(
-    text.matchAll(/(?:autor(?:a)?(?:es)?|requerente(?:s)?|promovente(?:s)?)\s*:?[\s\n-]*([A-ZÀ-Ú][A-ZÀ-Ú\s]{5,})/gi)
-  )
-    .map((match) => match[1] ?? "")
-    .map((value) => value.replace(/\s+/g, " ").trim())
-    .slice(0, 4);
-  const defendantMatch = text.match(/(?:em face de|em desfavor de|requerid[ao]|promovid[ao] contra)\s+([A-ZÀ-Ú0-9][A-ZÀ-Ú0-9\s\.\-&]{4,})/i);
-  const defendantWindow = defendantMatch
-    ? text.slice(defendantMatch.index ?? 0, Math.min(text.length, (defendantMatch.index ?? 0) + 500))
+  const representedEntityName = extractRepresentedEntityName(text);
+  const defendantWindow = representedEntityName
+    ? text.slice(Math.max(0, text.indexOf(representedEntityName)), Math.max(0, text.indexOf(representedEntityName)) + 500)
     : text;
-  const normalizedAuthors = uniqueNames(authorMatches);
+  const authors = extractAuthorsFromRegex(text);
 
   return {
     title: caseNumber ? `Processo ${caseNumber}` : fileName.replace(/\.[^.]+$/, ""),
     case_number: caseNumber,
-    represented_entity_name: defendantMatch?.[1]?.replace(/\s+/g, " ").trim() ?? null,
+    represented_entity_name: representedEntityName,
     represented_entity_document: normalizeCompanyDocument(defendantWindow),
-    authors: normalizedAuthors,
+    authors,
     summary: "Extracao inicial gerada por fallback textual com baixa confianca operacional.",
     cautionary_notes: [
       "A extracao foi preenchida por heuristica textual local.",
-      "Revise manualmente autores, empresa representada, documento da empresa e numero do processo."
+      "Revise manualmente autores, documentos dos autores, empresa representada, CNPJ e numero do processo."
     ]
   };
+}
+
+function improveEntityDocumentFromText(currentDocument: string | null, representedEntityName: string | null, extractedText: string | null) {
+  if (currentDocument) {
+    return currentDocument;
+  }
+
+  if (!representedEntityName || !extractedText) {
+    return null;
+  }
+
+  const index = extractedText.toLocaleLowerCase("pt-BR").indexOf(representedEntityName.toLocaleLowerCase("pt-BR"));
+  const windowText =
+    index >= 0 ? extractedText.slice(index, Math.min(extractedText.length, index + 800)) : extractedText;
+
+  return normalizeCompanyDocument(windowText);
 }
 
 export async function extractCaseDraftFromUploadedDocument({
@@ -164,18 +288,23 @@ export async function extractCaseDraftFromUploadedDocument({
     const response = await generateAnthropicResponse({
       systemPrompt: buildCaseIntakeUploadSystemPrompt(),
       userContent,
-      maxTokens: 1200
+      maxTokens: 1400
     });
 
     const parsedJson = JSON.parse(extractJsonPayload(response.text));
     const parsed = caseIntakeUploadExtractionSchema.parse(parsedJson);
+    const normalizedAuthors = uniqueAuthors(parsed.authors);
 
     return {
       extraction: {
         ...parsed,
         case_number: normalizeCaseNumber(parsed.case_number),
-        represented_entity_document: normalizeCompanyDocument(parsed.represented_entity_document),
-        authors: uniqueNames(parsed.authors)
+        represented_entity_document: improveEntityDocumentFromText(
+          normalizeCompanyDocument(parsed.represented_entity_document),
+          parsed.represented_entity_name,
+          extractedText
+        ),
+        authors: normalizedAuthors.length > 0 ? normalizedAuthors : fallback.authors
       },
       modelName: response.modelName,
       promptVersion: CASE_INTAKE_UPLOAD_PROMPT_VERSION,

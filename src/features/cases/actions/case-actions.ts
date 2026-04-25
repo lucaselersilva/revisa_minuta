@@ -260,7 +260,7 @@ export async function createCaseFromUploadAction(
     const title = buildImportedCaseTitle({
       extractedTitle: extracted.title,
       caseNumber: extracted.case_number,
-      firstAuthor: extracted.authors[0] ?? null,
+      firstAuthor: extracted.authors[0]?.name ?? null,
       representedEntity: extracted.represented_entity_name,
       fileName: file.name
     });
@@ -324,8 +324,8 @@ export async function createCaseFromUploadAction(
         extracted.authors.map((author) => ({
           case_id: caseId,
           role: "author",
-          name: author,
-          document: null
+          name: author.name,
+          document: author.document
         }))
       );
     }

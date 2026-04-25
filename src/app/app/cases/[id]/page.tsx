@@ -28,6 +28,7 @@ export default async function CaseDetailPage({ params }: Props) {
       eyebrow="Processo"
       title="Fluxo guiado do processo"
       description="Etapas operacionais com progresso visual, validacoes de completude e governanca preparatoria."
+      fullWidth
     >
       <GuidedCaseWorkflow state={state} profile={profile} />
     </PageShell>

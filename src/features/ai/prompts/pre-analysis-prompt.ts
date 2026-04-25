@@ -1,4 +1,4 @@
-export const PRE_ANALYSIS_PROMPT_VERSION = "v4_pdf_integral_sem_repeticao";
+export const PRE_ANALYSIS_PROMPT_VERSION = "v5_padrao_pre_defesa";
 
 export function buildPreAnalysisSystemPrompt() {
   return [
@@ -27,7 +27,9 @@ export function buildPreAnalysisSystemPrompt() {
     "O JSON obrigatorio deve conter exatamente estas chaves de primeiro nivel:",
     "resumo_executivo, matriz_final_confronto, analise_narrativa_vs_documentos, analise_individualizada_por_autor, cadeia_negocial, cronologia, coerencia_entre_documentos, analise_por_tipo_documental, mapa_documental_autor, priorizacao_estrategica, fatos_supervenientes_ou_da_emenda, suficiencia_probatoria, pedido_indenizatorio, compatibilidade_canal_documento, integridade_tecnica_arquivos, representacao_processual, espacialidade, indicios_litigancia_padronizada, pontos_exploraveis_defesa, documentos_internos_recomendados_para_defesa, alertas_de_nao_conclusao.",
     "Na matriz_final_confronto, explicite separadamente: o que o autor narra, o que os documentos provam, o que os documentos nao provam e o que pode ser explorado pela defesa.",
+    "Se houver elementos suficientes no contexto, nao deixe a matriz_final_confronto vazia.",
     "Em analise_narrativa_vs_documentos, conclua se os documentos embasam a narrativa e os pedidos, usando apenas: sim, parcialmente, nao ou inconclusivo.",
+    "Se houver documentos identificados no contexto, evite marcar todos os subitens centrais como inconclusivo ou inexistente sem justificativa especifica.",
     "Em analise_por_tipo_documental, use assinatura_compatibilidade apenas com: compativel, incompativel, indicio_de_inconsistencia ou nao_verificavel.",
     "Em prints_tela.qualidade_probatoria use apenas: forte, media, fraca ou inconclusiva.",
     "Em mapa_documental_autor, cada item deve indicar documento_referencia, tipo_documento, titular_ou_emitente, vinculo_subjetivo, peso_probatorio, achados_principais, impacto_para_defesa, pontos_de_atencao e referencia_trecho_ou_contexto.",
@@ -76,6 +78,10 @@ export function buildPreAnalysisUserPrompt(context: string) {
     "28. Monte priorizacao_estrategica com urgencia operacional e acao sugerida para a equipe de defesa.",
     "29. Se houver emenda inicial, alegacao nova ou fato superveniente, registre em fatos_supervenientes_ou_da_emenda.",
     "30. Nao analise conformidade da contestacao, salvo se houver texto de defesa explicitamente presente no contexto.",
+    "31. Se houver um unico autor identificado, preencha analise_individualizada_por_autor com documentos vinculados, pedidos vinculados, danos individualizados e observacoes uteis, evitando deixar o bloco vazio.",
+    "32. Se o contexto trouxer documentos como procuracao, identidade, comprovante de endereco, reserva, comprovantes de pagamento ou declaracoes, reflita isso em analise_por_tipo_documental e em mapa_documental_autor.",
+    "33. Se houver datas ou marcos temporais narrados, produza ao menos uma cronologia sintetica, mesmo que parte dela dependa apenas do texto extraido.",
+    "34. Em suficiencia_probatoria e pedido_indenizatorio, prefira conclusoes parciais com discriminacao de provas fortes, fracas e lacunas a respostas totalmente vazias.",
     "Se algo nao puder ser aferido com o material disponivel, use formulacoes prudentes e curtas, evitando repetir a mesma frase em varios campos.",
     "Quando a mesma ressalva afetar varios blocos, concentre isso em alertas_de_nao_conclusao e integridade_tecnica_arquivos.limitacoes_da_analise.",
     "Nao preencha campos com boilerplate desnecessario. Se nao houver item especifico, prefira arrays vazios, null quando cabivel e justificativas enxutas.",

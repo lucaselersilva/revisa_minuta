@@ -38,6 +38,7 @@ export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowStat
 
   const selectedStep = state.steps.find((step) => step.step_key === selectedStepKey) ?? state.currentStep;
   const selectedMeta = getWorkflowStepMeta(selectedStep.step_key);
+  const isPreAnalysisStep = selectedStep.step_key === "pre_analise";
   const completionInput: WorkflowCompletionInput = useMemo(() => {
     if (selectedStep.step_key === "revisao_final") {
       return { finalReviewChecklist: finalChecklist };
@@ -50,23 +51,31 @@ export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowStat
     <div className="space-y-6">
       <WorkflowHeader state={state} />
 
-      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+      <div className={isPreAnalysisStep ? "grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]" : "grid gap-6 xl:grid-cols-[360px_1fr]"}>
         <WorkflowStepper steps={state.steps} selectedStep={selectedStep.step_key} onSelectStep={setSelectedStepKey} />
 
         <div className="space-y-5">
-          <Card>
-            <CardHeader className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-              <div>
-                <CardTitle>{selectedMeta.title}</CardTitle>
-                <CardDescription>{selectedMeta.description}</CardDescription>
+          {isPreAnalysisStep ? (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,1),rgba(248,250,252,1))] p-6 shadow-sm">
+                <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
+                  <div className="max-w-4xl">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Etapa ativa</p>
+                    <h3 className="mt-2 text-2xl font-semibold text-slate-950">{selectedMeta.title}</h3>
+                    <p className="mt-2 text-sm leading-7 text-slate-600">{selectedMeta.description}</p>
+                  </div>
+                  <Badge variant={selectedStep.is_required ? "default" : "outline"}>
+                    {selectedStep.is_required ? "Obrigatoria" : "Opcional"}
+                  </Badge>
+                </div>
               </div>
-              <Badge variant={selectedStep.is_required ? "default" : "outline"}>
-                {selectedStep.is_required ? "Obrigatoria" : "Opcional"}
-              </Badge>
-            </CardHeader>
-            <CardContent className="space-y-5">
+
               {selectedStep.status === "locked" ? (
-                <StepGateNotice />
+                <Card>
+                  <CardContent className="pt-6">
+                    <StepGateNotice />
+                  </CardContent>
+                </Card>
               ) : (
                 <>
                   {selectedStep.status === "completed" ? (
@@ -81,11 +90,48 @@ export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowStat
                     finalChecklist={finalChecklist}
                     setFinalChecklist={setFinalChecklist}
                   />
-                  <WorkflowPendingRequirements validation={validation} />
+                  <Card className="border-slate-200">
+                    <CardContent className="pt-6">
+                      <WorkflowPendingRequirements validation={validation} />
+                    </CardContent>
+                  </Card>
                 </>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardHeader className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+                <div>
+                  <CardTitle>{selectedMeta.title}</CardTitle>
+                  <CardDescription>{selectedMeta.description}</CardDescription>
+                </div>
+                <Badge variant={selectedStep.is_required ? "default" : "outline"}>
+                  {selectedStep.is_required ? "Obrigatoria" : "Opcional"}
+                </Badge>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {selectedStep.status === "locked" ? (
+                  <StepGateNotice />
+                ) : (
+                  <>
+                    {selectedStep.status === "completed" ? (
+                      <StepCompletionCard title="Etapa concluida" description="Esta etapa ja foi validada no fluxo. Administradores podem reabri-la se houver necessidade operacional." />
+                    ) : null}
+                    {selectedStep.status === "skipped" ? (
+                      <StepCompletionCard title="Etapa marcada como nao se aplica" description="O fluxo seguiu sem exigir conteudo desta etapa opcional." />
+                    ) : null}
+                    <StepContent
+                      state={state}
+                      stepKey={selectedStep.step_key}
+                      finalChecklist={finalChecklist}
+                      setFinalChecklist={setFinalChecklist}
+                    />
+                    <WorkflowPendingRequirements validation={validation} />
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {selectedStep.status !== "locked" ? (
             <WorkflowActionBar

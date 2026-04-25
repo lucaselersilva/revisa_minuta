@@ -119,8 +119,8 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
   }
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+    <div className="space-y-6">
+      <div className="grid gap-5 2xl:grid-cols-[1.05fr_1.25fr]">
         <Card>
           <CardHeader>
             <CardTitle>Status da ingestao</CardTitle>
@@ -234,7 +234,7 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
         onRefresh={runRefreshExternalSearches}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[0.76fr_1.24fr]">
+      <div className="grid gap-5 2xl:grid-cols-[340px_minmax(0,1fr)]">
         <Card>
           <CardHeader>
             <CardTitle>Versoes do laudo</CardTitle>
@@ -291,7 +291,7 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,1)_0%,rgba(248,250,252,1)_100%)]">
+        <Card className="min-w-0 border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,1)_0%,rgba(248,250,252,1)_100%)]">
           <CardHeader>
             <CardTitle>Visualizacao do laudo</CardTitle>
             <CardDescription>Leitura operacional da versao selecionada.</CardDescription>
@@ -464,11 +464,11 @@ function PreAnalysisReportView({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.05),rgba(255,255,255,1))] p-5">
+      <div className="rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.05),rgba(255,255,255,1))] p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Painel defensivo</p>
-            <p className="max-w-3xl text-sm leading-6 text-slate-700">{report.resumo_executivo}</p>
+            <p className="max-w-5xl text-sm leading-7 text-slate-700">{report.resumo_executivo}</p>
           </div>
           <Badge variant={suficienciaVariant(report.suficiencia_probatoria.conclusao)}>
             {suficienciaLabel(report.suficiencia_probatoria.conclusao)}
@@ -484,7 +484,7 @@ function PreAnalysisReportView({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <Metric label="Suficiencia" value={suficienciaLabel(report.suficiencia_probatoria.conclusao)} />
         <Metric label="Pontos defesa" value={String(report.pontos_exploraveis_defesa.length)} />
         <Metric label="Prioridades" value={String(report.priorizacao_estrategica.length)} />
@@ -492,7 +492,7 @@ function PreAnalysisReportView({
         <Metric label="Docs processados" value={String(snapshot?.metrics.processedCount ?? 0)} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_420px]">
         <SectionCard title="Matriz final de confronto" emphasis>
           <div className="grid gap-3 lg:grid-cols-2">
             <SoftPanel title="O que o autor narra">
@@ -541,11 +541,11 @@ function PreAnalysisReportView({
         </SectionCard>
       </div>
 
-      <details open className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <details open className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <summary className="cursor-pointer list-none">
           <SectionHeader title="Narrativa x documentos" description={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.justificativa} />
         </summary>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="mt-4 grid gap-4 2xl:grid-cols-2">
           <SoftPanel title="Narrativa">
             <ConclusionRow label="Documentos embasam a narrativa" value={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.conclusao} />
             <TextBlock text={report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.justificativa} />
@@ -668,7 +668,7 @@ function PreAnalysisReportView({
         </SectionCard>
       </div>
 
-      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <summary className="cursor-pointer list-none">
           <SectionHeader title="Cronologia, coerencia e individualizacao" description="Bloco de verificacao objetiva do conjunto fatico-documental." />
         </summary>
@@ -724,7 +724,7 @@ function PreAnalysisReportView({
         <summary className="cursor-pointer list-none">
           <SectionHeader title="Analise por tipo documental" description="Leitura tecnica dos tipos documentais principais." />
         </summary>
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <div className="mt-4 grid gap-4 2xl:grid-cols-2">
           <SoftPanel title="Procuracao">
             <InfoLine label="Existe" value={report.analise_por_tipo_documental.procuracao.existe ? "Sim" : "Nao"} />
             <InfoLine label="Regularidade formal" value={report.analise_por_tipo_documental.procuracao.regularidade_formal} />
@@ -782,7 +782,7 @@ function PreAnalysisReportView({
         </div>
       </details>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-5 2xl:grid-cols-2">
         <SectionCard title="Cadeia negocial e canal documental" description="Quem aparece materialmente na relacao e quais canais tem prova.">
           <InfoLine label="Quem comprou" value={report.cadeia_negocial.quem_comprou ?? "Nao identificado"} />
           <InfoLine label="Quem pagou" value={report.cadeia_negocial.quem_pagou ?? "Nao identificado"} />
@@ -810,7 +810,7 @@ function PreAnalysisReportView({
         </SectionCard>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-5 2xl:grid-cols-2">
         <SectionCard title="Documentos internos recomendados" description="Materiais internos que podem robustecer a defesa.">
           <StringList items={report.documentos_internos_recomendados_para_defesa} />
         </SectionCard>
@@ -822,7 +822,7 @@ function PreAnalysisReportView({
         </SectionCard>
       </div>
 
-      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <summary className="cursor-pointer list-none">
           <SectionHeader title="Markdown persistido" description="Representacao textual salva do laudo atual." />
         </summary>

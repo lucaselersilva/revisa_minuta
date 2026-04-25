@@ -436,6 +436,286 @@ function normalizeExplorabilidade(value: unknown): "baixa" | "media" | "alta" {
   return "baixa";
 }
 
+function containsKeyword(value: string | null | undefined, keywords: string[]) {
+  const normalized = cleanText(value).toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
+
+function deriveDocumentFlags(report: PreAnalysisReportOutput) {
+  const mapItems = report.mapa_documental_autor;
+  const allTexts = mapItems.flatMap((item) => [
+    item.documento_referencia,
+    item.tipo_documento,
+    item.titular_ou_emitente ?? "",
+    item.impacto_para_defesa,
+    item.referencia_trecho_ou_contexto ?? "",
+    ...item.achados_principais,
+    ...item.pontos_de_atencao
+  ]);
+
+  const hasAny = (keywords: string[]) => allTexts.some((text) => containsKeyword(text, keywords));
+
+  return {
+    hasProcuracao: hasAny(["procuracao", "procuração", "zapsign", "outorgante", "outorgado"]),
+    hasIdentidade: hasAny(["identidade", "rg", "cnh", "senatran", "documento de identificacao", "documento de identificação"]),
+    hasEndereco: hasAny(["comprovante de endereco", "comprovante de endereço", "condominio", "condomínio", "endereco", "endereço", "boleto"]),
+    hasPagamento: hasAny(["comprovante de pagamento", "pagamento", "recibo", "boleto", "r$", "booking", "voucher"]),
+    hasPrints: hasAny(["print", "captura", "screenshot", "tela", "hotsite", "aplicativo", "email", "e-mail"]),
+    hasReserva: hasAny(["booking", "reserva", "hospedagem", "hotel"]),
+    hasDeclaracao: hasAny(["declaracao", "declaração", "contingencia", "contingência"])
+  };
+}
+
+function deriveResumoExecutivo(report: PreAnalysisReportOutput) {
+  const provas = report.matriz_final_confronto.o_que_documentos_provam.slice(0, 2);
+  const lacunas = report.matriz_final_confronto.o_que_documentos_nao_provam.slice(0, 2);
+  const pontos = report.pontos_exploraveis_defesa.slice(0, 2).map((item) => item.ponto);
+
+  const parts = [
+    provas.length ? `Ha suporte documental para ${provas.join("; ").toLowerCase()}.` : "",
+    lacunas.length ? `Persistem lacunas em ${lacunas.join("; ").toLowerCase()}.` : "",
+    pontos.length ? `A pre-defesa deve priorizar ${pontos.join("; ").toLowerCase()}.` : ""
+  ].filter(Boolean);
+
+  return parts.join(" ");
+}
+
+function deriveMatrizFromReport(report: PreAnalysisReportOutput) {
+  const fromMapa = report.mapa_documental_autor.flatMap((item) => item.achados_principais);
+  const fromPontos = report.pontos_exploraveis_defesa.map((item) => item.ponto);
+  const fromPriorizacao = report.priorizacao_estrategica.map((item) => item.titulo);
+
+  return {
+    o_que_autor_narra: compactGenericList([
+      ...report.matriz_final_confronto.o_que_autor_narra,
+      ...report.cronologia.eventos_identificados.map((item) => item.evento)
+    ]),
+    o_que_documentos_provam: compactGenericList([
+      ...report.matriz_final_confronto.o_que_documentos_provam,
+      ...fromMapa.slice(0, 4)
+    ]),
+    o_que_documentos_nao_provam: compactGenericList([
+      ...report.matriz_final_confronto.o_que_documentos_nao_provam,
+      ...report.suficiencia_probatoria.documentos_chave_ausentes,
+      ...report.pedido_indenizatorio.lacunas
+    ]),
+    o_que_pode_ser_explorado_pela_defesa: compactGenericList([
+      ...report.matriz_final_confronto.o_que_pode_ser_explorado_pela_defesa,
+      ...fromPontos,
+      ...fromPriorizacao
+    ])
+  };
+}
+
+function enrichIndividualizacao(report: PreAnalysisReportOutput) {
+  if (!report.analise_individualizada_por_autor.length) {
+    return report.analise_individualizada_por_autor;
+  }
+
+  const directDocuments = report.mapa_documental_autor
+    .filter((item) => item.vinculo_subjetivo === "autor_direto")
+    .map((item) => item.documento_referencia);
+
+  const danos = compactGenericList([
+    ...report.pedido_indenizatorio.despesas_extraordinarias_comprovadas,
+    ...report.pedido_indenizatorio.lacunas
+  ]);
+
+  const pedidos = compactGenericList([
+    ...report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_sustentados,
+    ...report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_nao_sustentados_ou_fracos
+  ]);
+
+  return report.analise_individualizada_por_autor.map((item) => ({
+    ...item,
+    documentos_vinculados: item.documentos_vinculados.length ? item.documentos_vinculados : directDocuments,
+    pedidos_vinculados: item.pedidos_vinculados.length ? item.pedidos_vinculados : pedidos,
+    danos_individualizados: item.danos_individualizados.length ? item.danos_individualizados : danos,
+    observacoes:
+      item.observacoes === "Analise sem observacoes adicionais." && directDocuments.length
+        ? "Documentos e pedidos vinculados a partir da rastreabilidade documental identificada."
+        : item.observacoes
+  }));
+}
+
+function enrichCronologia(report: PreAnalysisReportOutput) {
+  if (report.cronologia.eventos_identificados.length) {
+    return report.cronologia;
+  }
+
+  const events = compactGenericList([
+    ...report.matriz_final_confronto.o_que_autor_narra,
+    ...report.priorizacao_estrategica.map((item) => item.titulo)
+  ]).slice(0, 6);
+
+  return {
+    eventos_identificados: events.map((evento) => ({
+      data: null,
+      evento,
+      fonte_documental: null,
+      observacao: "Marco sintetizado a partir da narrativa e da priorizacao defensiva."
+    })),
+    inconsistencias_temporais: report.cronologia.inconsistencias_temporais,
+    eventos_sem_prova_temporal: report.cronologia.eventos_sem_prova_temporal
+  };
+}
+
+function enrichAnalisePorTipoDocumental(report: PreAnalysisReportOutput) {
+  const flags = deriveDocumentFlags(report);
+
+  return {
+    ...report.analise_por_tipo_documental,
+    procuracao: {
+      ...report.analise_por_tipo_documental.procuracao,
+      existe: report.analise_por_tipo_documental.procuracao.existe || flags.hasProcuracao
+    },
+    documento_identidade: {
+      ...report.analise_por_tipo_documental.documento_identidade,
+      existe: report.analise_por_tipo_documental.documento_identidade.existe || flags.hasIdentidade
+    },
+    comprovante_endereco: {
+      ...report.analise_por_tipo_documental.comprovante_endereco,
+      existe: report.analise_por_tipo_documental.comprovante_endereco.existe || flags.hasEndereco
+    },
+    comprovantes_pagamento: {
+      ...report.analise_por_tipo_documental.comprovantes_pagamento,
+      existem: report.analise_por_tipo_documental.comprovantes_pagamento.existem || flags.hasPagamento || flags.hasReserva
+    },
+    prints_tela: {
+      ...report.analise_por_tipo_documental.prints_tela,
+      existem: report.analise_por_tipo_documental.prints_tela.existem || flags.hasPrints
+    },
+    outros_documentos: report.analise_por_tipo_documental.outros_documentos.length
+      ? report.analise_por_tipo_documental.outros_documentos
+      : report.mapa_documental_autor
+          .filter((item) => !containsKeyword(item.tipo_documento, ["procuracao", "identidade", "endereco", "pagamento", "print"]))
+          .slice(0, 4)
+          .map((item) => ({
+            tipo_ou_descricao: item.documento_referencia,
+            peso_probatorio: item.peso_probatorio,
+            observacoes: item.impacto_para_defesa
+          }))
+  };
+}
+
+function enrichSuficienciaProbatoria(report: PreAnalysisReportOutput) {
+  return {
+    ...report.suficiencia_probatoria,
+    provas_fortes: compactGenericList([
+      ...report.suficiencia_probatoria.provas_fortes,
+      ...report.mapa_documental_autor.filter((item) => item.peso_probatorio === "forte").map((item) => item.documento_referencia)
+    ]),
+    provas_fracas_ou_unilaterais: compactGenericList([
+      ...report.suficiencia_probatoria.provas_fracas_ou_unilaterais,
+      ...report.mapa_documental_autor
+        .filter((item) => item.peso_probatorio === "fraco" || item.peso_probatorio === "inconclusivo")
+        .map((item) => item.documento_referencia)
+    ]),
+    documentos_chave_ausentes: compactGenericList([
+      ...report.suficiencia_probatoria.documentos_chave_ausentes,
+      ...report.pedido_indenizatorio.lacunas
+    ])
+  };
+}
+
+function enrichPedidoIndenizatorio(report: PreAnalysisReportOutput) {
+  const hasAnyExpense = report.pedido_indenizatorio.despesas_extraordinarias_comprovadas.length > 0;
+  const hasLacunas = report.pedido_indenizatorio.lacunas.length > 0;
+
+  return {
+    ...report.pedido_indenizatorio,
+    dano_material_tem_prova_minima:
+      report.pedido_indenizatorio.dano_material_tem_prova_minima === "inconclusivo" && (hasAnyExpense || hasLacunas)
+        ? "parcialmente"
+        : report.pedido_indenizatorio.dano_material_tem_prova_minima,
+    valor_pedido_tem_suporte_documental:
+      report.pedido_indenizatorio.valor_pedido_tem_suporte_documental === "inconclusivo" && hasLacunas
+        ? "parcialmente"
+        : report.pedido_indenizatorio.valor_pedido_tem_suporte_documental,
+    dano_moral_tem_base_fatica_individualizada:
+      report.pedido_indenizatorio.dano_moral_tem_base_fatica_individualizada === "inconclusivo" &&
+      report.analise_individualizada_por_autor.some((item) => item.danos_individualizados.length > 0)
+        ? "parcialmente"
+        : report.pedido_indenizatorio.dano_moral_tem_base_fatica_individualizada
+  };
+}
+
+function enrichNarrativaVsDocumentos(report: PreAnalysisReportOutput) {
+  const matriz = deriveMatrizFromReport(report);
+  const narrativaTemBase = matriz.o_que_documentos_provam.length > 0;
+  const pedidosTemLacuna = report.pedido_indenizatorio.lacunas.length > 0;
+
+  return {
+    documentos_embasam_narrativa: {
+      ...report.analise_narrativa_vs_documentos.documentos_embasam_narrativa,
+      conclusao:
+        report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.conclusao === "inconclusivo" && narrativaTemBase
+          ? "parcialmente"
+          : report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.conclusao,
+      pontos_fortes: compactGenericList([
+        ...report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.pontos_fortes,
+        ...matriz.o_que_documentos_provam.slice(0, 3)
+      ]),
+      lacunas: compactGenericList([
+        ...report.analise_narrativa_vs_documentos.documentos_embasam_narrativa.lacunas,
+        ...matriz.o_que_documentos_nao_provam.slice(0, 3)
+      ])
+    },
+    documentos_embasam_pedidos: {
+      ...report.analise_narrativa_vs_documentos.documentos_embasam_pedidos,
+      conclusao:
+        report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.conclusao === "inconclusivo" &&
+        (report.pedido_indenizatorio.despesas_extraordinarias_comprovadas.length > 0 || pedidosTemLacuna)
+          ? "parcialmente"
+          : report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.conclusao,
+      pedidos_nao_sustentados_ou_fracos: compactGenericList([
+        ...report.analise_narrativa_vs_documentos.documentos_embasam_pedidos.pedidos_nao_sustentados_ou_fracos,
+        ...report.pedido_indenizatorio.lacunas
+      ])
+    }
+  };
+}
+
+function enrichPreAnalysisReport(report: PreAnalysisReportOutput): PreAnalysisReportOutput {
+  const matriz = deriveMatrizFromReport(report);
+  const individualizacao = enrichIndividualizacao(report);
+  const cronologia = enrichCronologia({ ...report, matriz_final_confronto: matriz, analise_individualizada_por_autor: individualizacao });
+  const analisePorTipoDocumental = enrichAnalisePorTipoDocumental(report);
+  const suficienciaProbatoria = enrichSuficienciaProbatoria(report);
+  const pedidoIndenizatorio = enrichPedidoIndenizatorio({
+    ...report,
+    analise_individualizada_por_autor: individualizacao
+  });
+  const narrativaVsDocumentos = enrichNarrativaVsDocumentos({
+    ...report,
+    matriz_final_confronto: matriz,
+    pedido_indenizatorio: pedidoIndenizatorio
+  });
+
+  const enriched: PreAnalysisReportOutput = {
+    ...report,
+    resumo_executivo:
+      report.resumo_executivo === "Analise pre-defensiva gerada a partir do material processado nesta etapa."
+        ? deriveResumoExecutivo({
+            ...report,
+            matriz_final_confronto: matriz,
+            pontos_exploraveis_defesa: report.pontos_exploraveis_defesa
+          }) || report.resumo_executivo
+        : report.resumo_executivo,
+    matriz_final_confronto: matriz,
+    analise_narrativa_vs_documentos: narrativaVsDocumentos,
+    analise_individualizada_por_autor: individualizacao,
+    cronologia,
+    analise_por_tipo_documental: analisePorTipoDocumental,
+    suficiencia_probatoria: suficienciaProbatoria,
+    pedido_indenizatorio: pedidoIndenizatorio,
+    alertas_de_nao_conclusao: compactGenericList(report.alertas_de_nao_conclusao),
+    documentos_internos_recomendados_para_defesa: compactGenericList(report.documentos_internos_recomendados_para_defesa)
+  };
+
+  return preAnalysisReportSchema.parse(enriched);
+}
+
 function buildLegacySummary(source: Record<string, unknown>) {
   const diagnostico = isRecord(source.diagnostico_inicial) ? source.diagnostico_inicial : {};
   const quadro = isRecord(source.quadro_resumo) ? source.quadro_resumo : {};
@@ -777,7 +1057,7 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
   const legacyFindings = buildLegacyFindings(source);
   const legacyDocuments = buildLegacyRecommendedDocuments(source);
 
-  return preAnalysisReportSchema.parse({
+  const normalized = preAnalysisReportSchema.parse({
     resumo_executivo: prudentialText(
       source.resumo_executivo ?? legacySummary,
       "Analise pre-defensiva gerada a partir do material processado nesta etapa."
@@ -960,4 +1240,6 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
           "Quando um elemento depender de analise visual, pericial ou documental complementar, a conclusao deve ser tratada como nao verificavel ou dependente de validacao humana."
         ]
   });
+
+  return enrichPreAnalysisReport(normalized);
 }

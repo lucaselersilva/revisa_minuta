@@ -4,11 +4,12 @@ type PageShellProps = {
   description?: string;
   action?: React.ReactNode;
   children: React.ReactNode;
+  fullWidth?: boolean;
 };
 
-export function PageShell({ eyebrow, title, description, action, children }: PageShellProps) {
+export function PageShell({ eyebrow, title, description, action, children, fullWidth = false }: PageShellProps) {
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 py-8">
+    <div className={fullWidth ? "w-full px-5 py-8 2xl:px-8" : "mx-auto w-full max-w-7xl px-5 py-8"}>
       <div className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
           {eyebrow ? <p className="text-xs font-semibold uppercase text-primary">{eyebrow}</p> : null}

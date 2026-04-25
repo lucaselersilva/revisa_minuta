@@ -89,8 +89,22 @@ export async function generateDefenseConformityReport(caseId: string, profile: P
     return { ok: false, message: "Processo nao encontrado." };
   }
 
-  if (!context || context.metrics.initialProcessedCount === 0 || context.metrics.defenseProcessedCount === 0) {
-    return { ok: false, message: "Ainda nao ha contexto minimo processado para gerar o relatorio de conformidade." };
+  if (!context) {
+    return { ok: false, message: "Ainda nao foi possivel montar o contexto do relatorio de conformidade." };
+  }
+
+  if (context.metrics.initialProcessedCount === 0) {
+    return {
+      ok: false,
+      message: "A fase inicial ainda nao tem documentos processados suficientes para o relatorio de conformidade."
+    };
+  }
+
+  if (context.metrics.defenseProcessedCount === 0) {
+    return {
+      ok: false,
+      message: "A defesa ainda nao tem documentos processados. Processe a contestacao e os anexos defensivos antes de gerar o relatorio."
+    };
   }
 
   try {

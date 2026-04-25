@@ -16,3 +16,16 @@ export async function processCaseInitialDocumentsAction(caseId: string) {
   revalidatePath(`/app/cases/${caseId}`);
   return result;
 }
+
+export async function processCaseDefenseDocumentsAction(caseId: string) {
+  const { profile } = await getCurrentProfile();
+
+  if (!profile?.office_id) {
+    return { ok: false, message: "Perfil interno nao encontrado." };
+  }
+
+  const { processCaseDefenseDocuments } = await import("@/features/document-ingestion/services/process-case-defense-documents");
+  const result = await processCaseDefenseDocuments(caseId, profile);
+  revalidatePath(`/app/cases/${caseId}`);
+  return result;
+}

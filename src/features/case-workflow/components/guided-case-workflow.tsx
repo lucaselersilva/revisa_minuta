@@ -37,6 +37,7 @@ import {
   extractDefensePreparationFromMetadata
 } from "@/features/case-workflow/lib/defense-step";
 import { PreAnalysisWorkspace } from "@/features/document-ingestion/components/pre-analysis-workspace";
+import { processCaseDefenseDocumentsAction } from "@/features/document-ingestion/actions/document-ingestion-actions";
 import { StepCompletionCard } from "@/features/case-workflow/components/step-completion-card";
 import { StepGateNotice } from "@/features/case-workflow/components/step-gate-notice";
 import { WorkflowActionBar } from "@/features/case-workflow/components/workflow-action-bar";
@@ -649,6 +650,18 @@ function DefenseWorkspace({
     });
   }
 
+  function processDefenseDocuments() {
+    startTransition(async () => {
+      const result = await processCaseDefenseDocumentsAction(caseId);
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
   function generateConformity() {
     startTransition(async () => {
       const result = await generateDefenseConformityAction(caseId);
@@ -710,6 +723,29 @@ function DefenseWorkspace({
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Salvar preparo
               </Button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-white p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <BrainCircuit className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Processamento da defesa</h3>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  A contestacao e os anexos defensivos precisam ter texto extraido para alimentar o relatorio de conformidade.
+                </p>
+              </div>
+              <Button type="button" variant="outline" disabled={isPending || defenseDocuments.length === 0} onClick={processDefenseDocuments}>
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BrainCircuit className="h-4 w-4" />}
+                Processar defesa
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <MetricTile label="Docs defesa" value={String(defenseDocuments.length)} />
+              <MetricTile label="Contestacoes" value={String(mainDefenseCount)} />
+              <MetricTile label="Anexos" value={String(supportDefenseCount)} />
             </div>
           </div>
 

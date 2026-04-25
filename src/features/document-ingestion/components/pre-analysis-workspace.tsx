@@ -11,7 +11,7 @@ import {
   refreshAuthorExternalSearchesAction,
   requestAuthorExternalSearchesAction
 } from "@/features/ai/actions/pre-analysis-actions";
-import { normalizePreAnalysisReportPayload, type PreAnalysisReportOutput } from "@/features/ai/types/pre-analysis-report";
+import type { PreAnalysisReportOutput } from "@/features/ai/types/pre-analysis-report";
 import { processCaseInitialDocumentsAction } from "@/features/document-ingestion/actions/document-ingestion-actions";
 import { extractStructuredDocumentAnalysis, getDocumentAnalysisStatus } from "@/features/document-ingestion/lib/document-analysis-helpers";
 import { documentTypeLabels } from "@/features/cases/components/document-upload";
@@ -38,16 +38,6 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
     () => snapshot?.reports.find((report) => report.id === selectedReportId) ?? snapshot?.latestReport ?? null,
     [selectedReportId, snapshot]
   );
-
-  const selectedReportJson = useMemo(() => {
-    if (!selectedReport?.report_json) return null;
-
-    try {
-      return normalizePreAnalysisReportPayload(selectedReport.report_json);
-    } catch {
-      return null;
-    }
-  }, [selectedReport]);
 
   const selectedReportFailureMessage =
     selectedReport?.status === "failed"
@@ -297,8 +287,8 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
             <CardDescription>Leitura operacional da versao selecionada.</CardDescription>
           </CardHeader>
           <CardContent>
-            {selectedReport && selectedReport.status === "completed" && selectedReportJson ? (
-              <PreAnalysisReportView report={selectedReportJson} snapshot={snapshot} markdown={selectedReport.report_markdown} />
+            {selectedReport && selectedReport.status === "completed" ? (
+              <MarkdownReportView markdown={selectedReport.report_markdown} />
             ) : selectedReport?.status === "failed" ? (
               <div className="space-y-4">
                 <EmptyState icon={ShieldAlert} title="Geracao falhou" description="Revise o motivo abaixo e tente gerar uma nova versao do laudo." />
@@ -318,6 +308,16 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
         </Card>
       </div>
     </div>
+  );
+}
+
+function MarkdownReportView({ markdown }: { markdown: string | null }) {
+  return markdown ? (
+    <div className="min-w-0">
+      <pre className="whitespace-pre-wrap text-xs leading-6 text-slate-600">{markdown}</pre>
+    </div>
+  ) : (
+    <NeutralState message="Nao ha markdown persistido para esta versao." />
   );
 }
 

@@ -1,4 +1,4 @@
-export const PRE_ANALYSIS_PROMPT_VERSION = "v5_padrao_pre_defesa";
+export const PRE_ANALYSIS_PROMPT_VERSION = "v6_padrao_pre_defesa";
 
 export function buildPreAnalysisSystemPrompt() {
   return [
@@ -18,9 +18,16 @@ export function buildPreAnalysisSystemPrompt() {
     "Diferencie documentos ligados diretamente aos autores, a terceiros ou a pessoas nao claramente vinculadas.",
     "Se houver litisconsorcio, diferencie documentos, pedidos, danos e lacunas por autor.",
     "Se houver divergencia entre comprador, pagador, beneficiario, reclamante ou destinatario de estorno, destaque isso de forma objetiva.",
+    "Em resumo_executivo, abra com uma visao geral objetiva do processo: quem demanda, qual e o nucleo fatico, qual e o pedido central, quais sao as provas mais fortes e quais sao os eixos defensivos mais promissores.",
     "Evite repeticao artificial. Nao replique a mesma limitacao, ressalva ou ausencia de prova em varios campos com a mesma redacao.",
     "Quando a mesma limitacao afetar varios pontos, consolide isso preferencialmente em alertas_de_nao_conclusao, integridade_tecnica_arquivos.limitacoes_da_analise ou em uma justificativa central.",
     "Prefira arrays vazios e textos curtos a repetir frases genericas identicas em secoes diferentes.",
+    "Verifique com especial atencao inconsistencias temporais em e-mails, comprovantes, ferias, reservas, marcos de compra e documentos preparatorios.",
+    "Verifique com especial atencao divergencias entre voos, localizadores, codigos operacionais, datas, horarios e referencias cruzadas de trajetos.",
+    "Nao transforme prioridades defensivas em fatos. A cronologia deve conter apenas eventos do caso, com data ou marcacao prudente de ausencia de data.",
+    "Nao marque um tipo documental como inexistente se ele estiver claramente identificado no contexto, no mapa documental ou na individualizacao por autor.",
+    "Mantenha coerencia interna: um mesmo documento nao deve aparecer simultaneamente como prova forte e prova fraca sem justificativa especifica e contextual.",
+    "Se um documento for relevante para sustentar um achado, reflita isso de modo consistente em analise_por_tipo_documental, mapa_documental_autor e suficiencia_probatoria.",
     "Responda apenas com JSON estrito, sem markdown fora dos campos e sem comentarios extras.",
     "Todos os campos obrigatorios devem existir, ainda que com arrays vazios, null quando previsto, ou textos prudentes.",
     "Use exatamente os enums exigidos pelo schema.",
@@ -82,6 +89,12 @@ export function buildPreAnalysisUserPrompt(context: string) {
     "32. Se o contexto trouxer documentos como procuracao, identidade, comprovante de endereco, reserva, comprovantes de pagamento ou declaracoes, reflita isso em analise_por_tipo_documental e em mapa_documental_autor.",
     "33. Se houver datas ou marcos temporais narrados, produza ao menos uma cronologia sintetica, mesmo que parte dela dependa apenas do texto extraido.",
     "34. Em suficiencia_probatoria e pedido_indenizatorio, prefira conclusoes parciais com discriminacao de provas fortes, fracas e lacunas a respostas totalmente vazias.",
+    "35. No resumo_executivo, entregue visao geral do processo com nucleo fatico, pedido central, provas fortes, fragilidades e principais linhas defensivas.",
+    "36. Verifique inconsistencias temporais em e-mails, ferias, reservas, comprovantes e documentos preparatorios.",
+    "37. Verifique divergencias entre voos, localizadores, codigos, datas e referencias operacionais citadas em documentos diferentes.",
+    "38. Nao invente cronologia defensiva: em cronologia, liste fatos do caso, nao tarefas, recomendacoes ou pontos de investigacao.",
+    "39. Se um documento aparecer claramente identificado no contexto, nao marque o respectivo tipo documental como inexistente.",
+    "40. Nao classifique o mesmo documento como prova forte e como prova fraca ou unilateral sem justificativa concreta, delimitada e coerente.",
     "Se algo nao puder ser aferido com o material disponivel, use formulacoes prudentes e curtas, evitando repetir a mesma frase em varios campos.",
     "Quando a mesma ressalva afetar varios blocos, concentre isso em alertas_de_nao_conclusao e integridade_tecnica_arquivos.limitacoes_da_analise.",
     "Nao preencha campos com boilerplate desnecessario. Se nao houver item especifico, prefira arrays vazios, null quando cabivel e justificativas enxutas.",

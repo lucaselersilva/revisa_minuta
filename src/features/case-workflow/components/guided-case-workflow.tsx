@@ -27,7 +27,11 @@ import { applyCaseTaxonomySuggestionAction, generateCaseTaxonomySuggestionAction
 import { extractPersistedCaseTaxonomySuggestion } from "@/features/cases/lib/case-taxonomy-classification-schema";
 import { CaseStatusBadge } from "@/features/cases/components/case-status-badge";
 import { DocumentUpload, documentTypeLabels } from "@/features/cases/components/document-upload";
-import { saveDefensePreparationAction } from "@/features/case-workflow/actions/workflow-actions";
+import {
+  generateDefenseConformityAction,
+  saveDefensePreparationAction
+} from "@/features/case-workflow/actions/workflow-actions";
+import { extractDefenseConformityFromMetadata } from "@/features/case-workflow/lib/defense-conformity-step";
 import {
   defaultDefensePreparationInput,
   extractDefensePreparationFromMetadata
@@ -280,6 +284,8 @@ function StepContent({
   }
 
   if (stepKey === "defesa") {
+    const defenseStep = state.steps.find((step) => step.step_key === "defesa") ?? null;
+
     return (
       <DefenseWorkspace
         caseId={state.caseItem.id}
@@ -288,6 +294,7 @@ function StepContent({
         snapshot={state.preAnalysis}
         preparation={defensePreparation}
         onChange={setDefensePreparation}
+        savedConformityReport={extractDefenseConformityFromMetadata(defenseStep?.metadata)}
       />
     );
   }
@@ -605,7 +612,8 @@ function DefenseWorkspace({
   documents,
   snapshot,
   preparation,
-  onChange
+  onChange,
+  savedConformityReport
 }: {
   caseId: string;
   officeId: string;
@@ -613,6 +621,7 @@ function DefenseWorkspace({
   snapshot: CaseWorkflowState["preAnalysis"];
   preparation: DefensePreparationInput;
   onChange: (value: DefensePreparationInput) => void;
+  savedConformityReport: ReturnType<typeof extractDefenseConformityFromMetadata>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -621,6 +630,7 @@ function DefenseWorkspace({
   const supportDefenseCount = defenseDocuments.filter((document) => document.document_type === "defense_documents").length;
   const latestReport = snapshot?.latestCompletedReport ?? null;
   const hasAcknowledgement = Boolean(snapshot?.latestAcknowledgementForLatestReport);
+  const conformityReport = savedConformityReport?.report_json ?? null;
   const checklistItems = [
     ["preAnalysisReviewed", "Pre-analise revisada e incorporada na estrategia"],
     ["defenseStrategyDefined", "Linha defensiva principal definida"],
@@ -630,6 +640,18 @@ function DefenseWorkspace({
   function savePreparation() {
     startTransition(async () => {
       const result = await saveDefensePreparationAction(caseId, preparation);
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function generateConformity() {
+    startTransition(async () => {
+      const result = await generateDefenseConformityAction(caseId);
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
@@ -739,6 +761,41 @@ function DefenseWorkspace({
           </div>
 
           <div className="rounded-lg border bg-white p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Relatorio de conformidade</h3>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Cruza inicial, emenda, documentos do autor, laudo previo e contestacao para mostrar pontos conformes,
+                  incompletos e ausentes na defesa.
+                </p>
+              </div>
+              <Button type="button" variant="outline" disabled={isPending} onClick={generateConformity}>
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {savedConformityReport ? "Atualizar relatorio" : "Gerar relatorio"}
+              </Button>
+            </div>
+
+            {savedConformityReport ? (
+              <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-medium">
+                  Ultima geracao em {new Date(savedConformityReport.generated_at).toLocaleString("pt-BR")}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  Prompt {savedConformityReport.prompt_version}
+                  {savedConformityReport.model_name ? ` - ${savedConformityReport.model_name}` : ""}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Nenhum relatorio de conformidade gerado ainda para esta defesa.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-lg border bg-white p-5">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
               <h3 className="font-semibold">Resumo documental da defesa</h3>
@@ -758,6 +815,73 @@ function DefenseWorkspace({
               )}
             </div>
           </div>
+
+          {conformityReport ? (
+            <>
+              <div className="rounded-lg border bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Sintese de conformidade</h3>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <MetricTile
+                    label="Conformes"
+                    value={String(conformityReport.pontuacao_geral.contestacao.conformes)}
+                  />
+                  <MetricTile
+                    label="Incompletos"
+                    value={String(conformityReport.pontuacao_geral.contestacao.incompletos)}
+                  />
+                  <MetricTile
+                    label="Ausentes"
+                    value={String(conformityReport.pontuacao_geral.contestacao.ausentes)}
+                  />
+                  <MetricTile
+                    label="Pontuacao"
+                    value={`${conformityReport.pontuacao_geral.pontuacao_geral}/100`}
+                  />
+                  <MetricTile label="Risco geral" value={conformityReport.pontuacao_geral.risco_geral} />
+                  <MetricTile
+                    label="Risco alto docs"
+                    value={String(conformityReport.pontuacao_geral.documentacao_autor.risco_alto)}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <Files className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Pedidos e lacunas destacadas</h3>
+                </div>
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <StringListCard
+                    title="Pedidos nao integralmente rebatidos"
+                    items={conformityReport.pedidos_da_inicial_nao_integralmente_rebatidos.map(
+                      (item) => `${item.pedido} - ${item.situacao}`
+                    )}
+                    emptyMessage="Nenhum pedido relevante pendente de enfrentamento foi destacado."
+                  />
+                  <StringListCard
+                    title="Recomendacoes prioritarias"
+                    items={conformityReport.recomendacoes_prioritarias.map(
+                      (item) => `[${item.prioridade}] ${item.titulo} - ${item.acao_sugerida || item.descricao}`
+                    )}
+                    emptyMessage="Nenhuma recomendacao prioritaria registrada."
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Markdown gerado</h3>
+                </div>
+                <pre className="mt-4 overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-6 text-slate-100 whitespace-pre-wrap">
+                  {savedConformityReport?.report_markdown}
+                </pre>
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
     </div>

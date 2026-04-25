@@ -7,6 +7,7 @@ import {
   markStepAsSkipped,
   reopenStep
 } from "@/features/case-workflow/services/workflow-engine";
+import { generateDefenseConformityReport } from "@/features/ai/services/generate-defense-conformity-report";
 import { normalizeDefensePreparationInput } from "@/features/case-workflow/lib/defense-step";
 import type { DefensePreparationInput, WorkflowCompletionInput } from "@/features/case-workflow/types";
 import { writeCaseHistory } from "@/features/cases/services/case-history-service";
@@ -131,4 +132,75 @@ export async function saveDefensePreparationAction(
   revalidatePath(`/app/cases/${caseId}`);
   revalidatePath("/app/cases");
   return { ok: true, message: "Preparo da defesa salvo." };
+}
+
+export async function generateDefenseConformityAction(caseId: string): Promise<ActionResult> {
+  const profile = await requireProfile();
+
+  if (!profile) {
+    return { ok: false, message: "Perfil interno nao encontrado." };
+  }
+
+  const generated = await generateDefenseConformityReport(caseId, profile);
+
+  if (!generated.ok) {
+    return { ok: false, message: generated.message };
+  }
+
+  const supabase = await createClient();
+  const currentStepResult = await supabase
+    .from("AA_case_workflow_steps")
+    .select("metadata")
+    .eq("case_id", caseId)
+    .eq("step_key", "defesa")
+    .single<{ metadata: Record<string, unknown> | null }>();
+
+  const metadata = {
+    ...(currentStepResult.data?.metadata ?? {}),
+    defense_conformity_report: {
+      prompt_version: generated.promptVersion,
+      model_name: generated.modelName,
+      input_summary: generated.inputSummary,
+      generated_at: new Date().toISOString(),
+      generated_by: profile.id,
+      report_json: generated.report,
+      report_markdown: generated.reportMarkdown
+    }
+  };
+
+  const { error } = await supabase
+    .from("AA_case_workflow_steps")
+    .update({ metadata })
+    .eq("case_id", caseId)
+    .eq("step_key", "defesa");
+
+  if (error) {
+    return { ok: false, message: "O relatorio foi gerado, mas nao foi possivel salvá-lo na etapa de defesa." };
+  }
+
+  await writeCaseHistory({
+    caseId,
+    action: "defense.conformity.generated",
+    profile,
+    metadata: {
+      prompt_version: generated.promptVersion,
+      model_name: generated.modelName
+    }
+  });
+
+  await writeAuditLog({
+    profile,
+    action: "defense.conformity.generated",
+    entityType: "AA_case_workflow_steps",
+    entityId: null,
+    metadata: {
+      case_id: caseId,
+      step_key: "defesa",
+      prompt_version: generated.promptVersion
+    }
+  });
+
+  revalidatePath(`/app/cases/${caseId}`);
+  revalidatePath("/app/cases");
+  return { ok: true, message: "Relatorio de conformidade gerado." };
 }

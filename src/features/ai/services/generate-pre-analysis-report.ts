@@ -204,14 +204,44 @@ async function parsePreAnalysisResponse(text: string) {
     return tryParseJsonPayload(text);
   } catch (error) {
     if (!(error instanceof Error)) {
-      throw error;
+      throw new PreAnalysisGenerationError(
+        "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
+        {
+          rawResponseText: text,
+          repairAttempted: false
+        }
+      );
     }
 
-    if (!error.message.includes("JSON")) {
-      throw error;
+    const isRecoverableParseFailure =
+      error.name === "SyntaxError" ||
+      error.message.includes("JSON") ||
+      error.message.includes("Expected") ||
+      error.message.includes("Unexpected");
+
+    if (!isRecoverableParseFailure) {
+      throw new PreAnalysisGenerationError(
+        "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
+        {
+          rawResponseText: text,
+          normalizationError: error.message,
+          repairAttempted: false
+        }
+      );
     }
 
-    return repairPreAnalysisJson(text);
+    try {
+      return await repairPreAnalysisJson(text);
+    } catch (repairError) {
+      throw new PreAnalysisGenerationError(
+        "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
+        {
+          rawResponseText: text,
+          normalizationError: error.message,
+          repairAttempted: true
+        }
+      );
+    }
   }
 }
 

@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { CaseStatusBadge } from "@/features/cases/components/case-status-badge";
 import { DocumentUpload, documentTypeLabels, stageLabels } from "@/features/cases/components/document-upload";
 import type { CaseDetail } from "@/features/cases/types";
-import { cn } from "@/lib/utils";
+import { cn, formatCnpj } from "@/lib/utils";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -96,7 +96,8 @@ function OverviewTab({ caseItem }: { caseItem: CaseDetail }) {
             <div className="rounded-lg border bg-white p-4">
               <Building2 className="mb-3 h-5 w-5 text-primary" />
               <p className="font-semibold">{entity.name}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{entity.document || "Documento nao informado"}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{entity.document ? formatCnpj(entity.document) : "CNPJ nao informado"}</p>
+              <p className="mt-3 text-sm text-muted-foreground">{caseItem.represented_entity_notes || "Sem observacao registrada para esta empresa neste processo."}</p>
             </div>
           ) : (
             <EmptyState icon={Building2} title="Sem empresa vinculada" description="Edite o processo para vincular uma empresa representada." />

@@ -35,6 +35,7 @@ export const caseFormSchema = z
     case_number: z.string().trim().optional(),
     title: z.string().trim().min(3, "Informe um titulo para o processo."),
     description: z.string().trim().optional(),
+    represented_entity_notes: z.string().trim().optional(),
     status: z.enum(caseStatuses).default("draft"),
     taxonomy_id: z.string().uuid().optional(),
     responsible_lawyer_id: z.string().uuid().optional(),

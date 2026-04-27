@@ -86,6 +86,7 @@ export type Case = {
   case_number: string | null;
   title: string | null;
   description: string | null;
+  represented_entity_notes: string | null;
   status: CaseStatus;
   taxonomy_id: string | null;
   responsible_lawyer_id: string | null;

@@ -19,6 +19,7 @@ import {
   type CaseFormInput,
   type RegisterUploadedCaseDocumentsInput
 } from "@/lib/validations/cases";
+import { formatCaseNumber, formatCnpj } from "@/lib/utils";
 import { writeAuditLog } from "@/services/audit-log-service";
 import type { CaseDocumentStage, CaseDocumentType } from "@/types/database";
 
@@ -117,7 +118,7 @@ async function resolveRepresentedEntity(input: CaseFormInput["represented_entity
     .insert({
       office_id: officeId,
       name: input.name,
-      document: input.document || null
+      document: input.document ? formatCnpj(input.document) : null
     })
     .select("id")
     .single<{ id: string }>();
@@ -151,9 +152,10 @@ export async function createCaseAction(input: CaseFormInput): Promise<ActionResu
       .from("AA_cases")
       .insert({
         office_id: profile.office_id,
-        case_number: parsed.data.case_number || null,
+        case_number: parsed.data.case_number ? formatCaseNumber(parsed.data.case_number) : null,
         title: parsed.data.title,
         description: parsed.data.description || null,
+        represented_entity_notes: parsed.data.represented_entity_notes || null,
         status: parsed.data.status,
         taxonomy_id: parsed.data.taxonomy_id || null,
         responsible_lawyer_id: parsed.data.responsible_lawyer_id || null,
@@ -268,7 +270,7 @@ export async function createCaseFromUploadAction(
     const { error: caseError } = await supabase.from("AA_cases").insert({
       id: caseId,
       office_id: profile.office_id,
-      case_number: extracted.case_number || null,
+      case_number: extracted.case_number ? formatCaseNumber(extracted.case_number) : null,
       title,
       description:
         extracted.summary && extracted.summary !== "Extracao inicial gerada por fallback textual com baixa confianca operacional."
@@ -296,7 +298,7 @@ export async function createCaseFromUploadAction(
         .insert({
           office_id: profile.office_id,
           name: extracted.represented_entity_name,
-          document: extracted.represented_entity_document || null
+          document: extracted.represented_entity_document ? formatCnpj(extracted.represented_entity_document) : null
         })
         .select("id")
         .single<{ id: string }>();
@@ -306,7 +308,7 @@ export async function createCaseFromUploadAction(
       await supabase
         .from("AA_case_entities")
         .update({
-          document: extracted.represented_entity_document
+          document: formatCnpj(extracted.represented_entity_document)
         })
         .eq("id", entityId)
         .is("document", null);
@@ -499,9 +501,10 @@ export async function updateCaseAction(id: string, input: CaseFormInput): Promis
     const { error } = await supabase
       .from("AA_cases")
       .update({
-        case_number: parsed.data.case_number || null,
+        case_number: parsed.data.case_number ? formatCaseNumber(parsed.data.case_number) : null,
         title: parsed.data.title,
         description: parsed.data.description || null,
+        represented_entity_notes: parsed.data.represented_entity_notes || null,
         status: parsed.data.status,
         taxonomy_id: parsed.data.taxonomy_id || null,
         responsible_lawyer_id: parsed.data.responsible_lawyer_id || null

@@ -10,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/services/audit-log-service";
 import type { Profile } from "@/types/database";
 
-const PRE_ANALYSIS_MAX_TOKENS = 7000;
+const PRE_ANALYSIS_MAX_TOKENS = 10000;
 const PRE_ANALYSIS_MULTIMODAL_MAX_DOCS = 8;
 const PRE_ANALYSIS_MULTIMODAL_MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 
@@ -152,6 +152,127 @@ function extractJsonPayload(text: string) {
   return trimmed.slice(start, end + 1);
 }
 
+function closeOpenJsonStructures(fragment: string) {
+  const closers: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (const char of fragment) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      closers.push("}");
+      continue;
+    }
+
+    if (char === "[") {
+      closers.push("]");
+      continue;
+    }
+
+    if ((char === "}" || char === "]") && closers.length) {
+      const expected = closers[closers.length - 1];
+      if (expected === char) {
+        closers.pop();
+      }
+    }
+  }
+
+  const suffix = `${inString ? '"' : ""}${closers.reverse().join("")}`;
+  return `${fragment}${suffix}`;
+}
+
+function collectJsonSafeBreakpoints(payload: string) {
+  const breakpoints = [payload.length];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < payload.length; index += 1) {
+    const char = payload[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "," || char === "}" || char === "]") {
+      breakpoints.push(index + 1);
+    }
+  }
+
+  return [...new Set(breakpoints)].sort((left, right) => right - left);
+}
+
+function trimDanglingJsonFragment(fragment: string) {
+  return fragment.replace(/[\s,]+$/g, "").trimEnd();
+}
+
+function tryRepairJsonLocally(text: string) {
+  const trimmed = text.trim();
+  const start = trimmed.indexOf("{");
+
+  if (start === -1) {
+    return null;
+  }
+
+  const payload = trimmed.slice(start);
+  const breakpoints = collectJsonSafeBreakpoints(payload);
+
+  for (const breakpoint of breakpoints) {
+    const partial = trimDanglingJsonFragment(payload.slice(0, breakpoint));
+    if (!partial.startsWith("{")) {
+      continue;
+    }
+
+    try {
+      return JSON.parse(closeOpenJsonStructures(partial));
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 function tryParseJsonPayload(text: string) {
   return JSON.parse(extractJsonPayload(text));
 }
@@ -203,6 +324,11 @@ async function parsePreAnalysisResponse(text: string) {
   try {
     return tryParseJsonPayload(text);
   } catch (error) {
+    const locallyRepaired = tryRepairJsonLocally(text);
+    if (locallyRepaired) {
+      return locallyRepaired;
+    }
+
     if (!(error instanceof Error)) {
       throw new PreAnalysisGenerationError(
         "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
@@ -232,7 +358,7 @@ async function parsePreAnalysisResponse(text: string) {
 
     try {
       return await repairPreAnalysisJson(text);
-    } catch (repairError) {
+    } catch {
       throw new PreAnalysisGenerationError(
         "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
         {

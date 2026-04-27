@@ -719,8 +719,17 @@ function enrichPreAnalysisReport(report: PreAnalysisReportOutput): PreAnalysisRe
 function buildLegacySummary(source: Record<string, unknown>) {
   const diagnostico = isRecord(source.diagnostico_inicial) ? source.diagnostico_inicial : {};
   const quadro = isRecord(source.quadro_resumo) ? source.quadro_resumo : {};
+  const resumoExecutivo = isRecord(source.resumo_executivo) ? source.resumo_executivo : {};
+
+  const resumoLegacyParts = [
+    pickFirstText(resumoExecutivo, ["visao_geral", "resumo", "descricao"]),
+    pickFirstText(resumoExecutivo, ["pedido_central"]),
+    toStringArray(resumoExecutivo.provas_mais_fortes_autor).slice(0, 2).join("; "),
+    toStringArray(resumoExecutivo.eixos_defensivos_promissores).slice(0, 2).join("; ")
+  ].filter(Boolean);
 
   return (
+    (resumoLegacyParts.length ? resumoLegacyParts.join(" ") : "") ||
     pickFirstText(source, ["resumo_executivo"]) ||
     pickFirstText(diagnostico, ["resumo_executivo", "resumo", "texto", "descricao"]) ||
     pickFirstText(quadro, ["sintese_final", "resumo_final", "conclusao"]) ||
@@ -745,6 +754,70 @@ function buildLegacyAttention(source: Record<string, unknown>) {
 
 function buildLegacyRecommendedDocuments(source: Record<string, unknown>) {
   return toStringArray(source.documentos_recomendados);
+}
+
+function normalizeLegacyMatrix(value: unknown) {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const items = value.filter(isRecord);
+  if (!items.length) {
+    return null;
+  }
+
+  const withTheme = (theme: string, text: string) => (theme ? `${theme}: ${text}` : text);
+
+  return {
+    o_que_autor_narra: compactGenericList(
+      items
+        .map((item) => withTheme(cleanText(item.tema), cleanText(item.narrativa_autor)))
+        .filter(Boolean)
+    ),
+    o_que_documentos_provam: compactGenericList(
+      items
+        .map((item) => withTheme(cleanText(item.tema), cleanText(item.documentos_provam)))
+        .filter(Boolean)
+    ),
+    o_que_documentos_nao_provam: compactGenericList(
+      items
+        .map((item) => withTheme(cleanText(item.tema), cleanText(item.documentos_nao_provam)))
+        .filter(Boolean)
+    ),
+    o_que_pode_ser_explorado_pela_defesa: compactGenericList(
+      items
+        .map((item) => withTheme(cleanText(item.tema), cleanText(item.explorabilidade_defesa)))
+        .filter(Boolean)
+    )
+  };
+}
+
+function normalizeLegacyNarrativaConclusao(
+  value: unknown,
+  justification: unknown,
+  positives: unknown,
+  gaps: unknown
+) {
+  return {
+    conclusao: normalizeYesPartialNo(value),
+    justificativa: prudentialText(justification, "Analise convertida do formato legado."),
+    pontos_fortes: toStringArray(positives),
+    lacunas: toStringArray(gaps)
+  };
+}
+
+function normalizeLegacyPedidosConclusao(
+  value: unknown,
+  justification: unknown,
+  sustained: unknown,
+  weak: unknown
+) {
+  return {
+    conclusao: normalizeYesPartialNo(value),
+    justificativa: prudentialText(justification, "Analise convertida do formato legado."),
+    pedidos_sustentados: toStringArray(sustained),
+    pedidos_nao_sustentados_ou_fracos: toStringArray(weak)
+  };
 }
 
 function normalizeIndividualAuthors(value: unknown, source: Record<string, unknown>) {
@@ -1037,6 +1110,7 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
   const embasamNarrativa = isRecord(narrativa.documentos_embasam_narrativa) ? narrativa.documentos_embasam_narrativa : {};
   const embasamPedidos = isRecord(narrativa.documentos_embasam_pedidos) ? narrativa.documentos_embasam_pedidos : {};
   const matriz = isRecord(source.matriz_final_confronto) ? source.matriz_final_confronto : {};
+  const legacyMatriz = normalizeLegacyMatrix(source.matriz_final_confronto);
   const coerencia = isRecord(source.coerencia_entre_documentos) ? source.coerencia_entre_documentos : {};
   const cadeia = isRecord(source.cadeia_negocial) ? source.cadeia_negocial : {};
   const tipoDocumental = isRecord(source.analise_por_tipo_documental) ? source.analise_por_tipo_documental : {};
@@ -1059,59 +1133,88 @@ export function normalizePreAnalysisReportPayload(payload: unknown): PreAnalysis
 
   const normalized = preAnalysisReportSchema.parse({
     resumo_executivo: prudentialText(
-      source.resumo_executivo ?? legacySummary,
+      typeof source.resumo_executivo === "string" ? source.resumo_executivo : legacySummary,
       "Analise pre-defensiva gerada a partir do material processado nesta etapa."
     ),
     matriz_final_confronto: {
-      o_que_autor_narra: toStringArray(matriz.o_que_autor_narra ?? source.fatos_relevantes),
-      o_que_documentos_provam: toStringArray(matriz.o_que_documentos_provam ?? legacyFindings),
-      o_que_documentos_nao_provam: toStringArray(matriz.o_que_documentos_nao_provam ?? source.lacunas_iniciais),
+      o_que_autor_narra: toStringArray(matriz.o_que_autor_narra ?? legacyMatriz?.o_que_autor_narra ?? source.fatos_relevantes),
+      o_que_documentos_provam: toStringArray(
+        matriz.o_que_documentos_provam ?? legacyMatriz?.o_que_documentos_provam ?? legacyFindings
+      ),
+      o_que_documentos_nao_provam: toStringArray(
+        matriz.o_que_documentos_nao_provam ?? legacyMatriz?.o_que_documentos_nao_provam ?? source.lacunas_iniciais
+      ),
       o_que_pode_ser_explorado_pela_defesa: toStringArray(
-        matriz.o_que_pode_ser_explorado_pela_defesa ?? source.pontos_de_atencao_para_a_defesa
+        matriz.o_que_pode_ser_explorado_pela_defesa ??
+          legacyMatriz?.o_que_pode_ser_explorado_pela_defesa ??
+          source.pontos_de_atencao_para_a_defesa ??
+          (isRecord(source.resumo_executivo) ? source.resumo_executivo.eixos_defensivos_promissores : undefined)
       )
     },
     analise_narrativa_vs_documentos: {
-      documentos_embasam_narrativa: {
-        conclusao: normalizeYesPartialNo(embasamNarrativa.conclusao),
-        justificativa: prudentialText(
-          embasamNarrativa.justificativa,
-          "A aderencia entre narrativa e anexos ficou apenas parcialmente verificavel com o material atual."
-        ),
-        pontos_fortes: toStringArray(embasamNarrativa.pontos_fortes ?? legacyFindings.slice(0, 3)),
-        lacunas: toStringArray(embasamNarrativa.lacunas ?? source.lacunas_iniciais)
-      },
-      documentos_embasam_pedidos: {
-        conclusao: normalizeYesPartialNo(embasamPedidos.conclusao),
-        justificativa: prudentialText(
-          embasamPedidos.justificativa,
-          "O suporte documental dos pedidos ficou apenas parcialmente verificavel com o material atual."
-        ),
-        pedidos_sustentados: toStringArray(embasamPedidos.pedidos_sustentados),
-        pedidos_nao_sustentados_ou_fracos: toStringArray(
-          embasamPedidos.pedidos_nao_sustentados_ou_fracos ?? source.lacunas_iniciais
-        )
-      }
+      documentos_embasam_narrativa: isRecord(narrativa.documentos_embasam_narrativa)
+        ? {
+            conclusao: normalizeYesPartialNo(embasamNarrativa.conclusao),
+            justificativa: prudentialText(
+              embasamNarrativa.justificativa,
+              "A aderencia entre narrativa e anexos ficou apenas parcialmente verificavel com o material atual."
+            ),
+            pontos_fortes: toStringArray(embasamNarrativa.pontos_fortes ?? legacyFindings.slice(0, 3)),
+            lacunas: toStringArray(embasamNarrativa.lacunas ?? source.lacunas_iniciais)
+          }
+        : normalizeLegacyNarrativaConclusao(
+            narrativa.documentos_embasam_narrativa,
+            narrativa.justificativa_central,
+            narrativa.pontos_de_aderencia ?? legacyFindings.slice(0, 3),
+            narrativa.pontos_de_divergencia ?? source.lacunas_iniciais
+          ),
+      documentos_embasam_pedidos: isRecord(narrativa.documentos_embasam_pedidos)
+        ? {
+            conclusao: normalizeYesPartialNo(embasamPedidos.conclusao),
+            justificativa: prudentialText(
+              embasamPedidos.justificativa,
+              "O suporte documental dos pedidos ficou apenas parcialmente verificavel com o material atual."
+            ),
+            pedidos_sustentados: toStringArray(embasamPedidos.pedidos_sustentados),
+            pedidos_nao_sustentados_ou_fracos: toStringArray(
+              embasamPedidos.pedidos_nao_sustentados_ou_fracos ?? source.lacunas_iniciais
+            )
+          }
+        : normalizeLegacyPedidosConclusao(
+            narrativa.documentos_embasam_pedidos,
+            narrativa.justificativa_central,
+            isRecord(source.resumo_executivo) ? source.resumo_executivo.provas_mais_fortes_autor : undefined,
+            narrativa.pontos_de_divergencia ?? source.lacunas_iniciais
+          )
     },
     analise_individualizada_por_autor: normalizeIndividualAuthors(source.analise_individualizada_por_autor, source),
     cadeia_negocial: {
-      quem_comprou: cleanNullableText(cadeia.quem_comprou),
-      quem_pagou: cleanNullableText(cadeia.quem_pagou),
-      quem_viajou_ou_seria_beneficiario: cleanNullableText(cadeia.quem_viajou_ou_seria_beneficiario),
-      quem_reclamou_ou_solicitou_suporte: cleanNullableText(cadeia.quem_reclamou_ou_solicitou_suporte),
-      quem_recebeu_ou_deveria_receber_estorno: cleanNullableText(cadeia.quem_recebeu_ou_deveria_receber_estorno),
-      divergencias_entre_pessoas: toStringArray(cadeia.divergencias_entre_pessoas)
+      quem_comprou: cleanNullableText(cadeia.quem_comprou ?? cadeia.comprador),
+      quem_pagou: cleanNullableText(cadeia.quem_pagou ?? cadeia.pagador),
+      quem_viajou_ou_seria_beneficiario: cleanNullableText(
+        cadeia.quem_viajou_ou_seria_beneficiario ?? cadeia.beneficiario_passageiro
+      ),
+      quem_reclamou_ou_solicitou_suporte: cleanNullableText(
+        cadeia.quem_reclamou_ou_solicitou_suporte ?? cadeia.reclamante
+      ),
+      quem_recebeu_ou_deveria_receber_estorno: cleanNullableText(
+        cadeia.quem_recebeu_ou_deveria_receber_estorno ?? cadeia.destinatario_estorno_ou_voucher
+      ),
+      divergencias_entre_pessoas: toStringArray(cadeia.divergencias_entre_pessoas ?? cadeia.lacunas)
     },
     cronologia: normalizeCronologia(source.cronologia, source),
     coerencia_entre_documentos: {
-      nomes_divergentes: toStringArray(coerencia.nomes_divergentes),
-      datas_divergentes: toStringArray(coerencia.datas_divergentes),
-      valores_divergentes: toStringArray(coerencia.valores_divergentes),
-      codigos_localizadores_divergentes: toStringArray(coerencia.codigos_localizadores_divergentes),
+      nomes_divergentes: toStringArray(coerencia.nomes_divergentes ?? coerencia.nomes),
+      datas_divergentes: toStringArray(coerencia.datas_divergentes ?? coerencia.datas),
+      valores_divergentes: toStringArray(coerencia.valores_divergentes ?? coerencia.valores),
+      codigos_localizadores_divergentes: toStringArray(
+        coerencia.codigos_localizadores_divergentes ?? coerencia.localizadores_e_codigos
+      ),
       emails_telefones_ou_identificadores_divergentes: toStringArray(
         coerencia.emails_telefones_ou_identificadores_divergentes
       ),
       observacoes: prudentialText(
-        coerencia.observacoes,
+        coerencia.observacoes ?? coerencia.divergencias_relevantes,
         "Coerencia interna analisada a partir do material processado."
       )
     },

@@ -46,7 +46,7 @@ export function NewCaseEntry({
         />
       </div>
 
-      {mode === "manual" ? <CaseForm options={options} /> : <CreateCaseFromUploadCard profile={profile} />}
+      {mode === "manual" ? <CaseForm options={options} canManageEntities={profile.role === "admin"} /> : <CreateCaseFromUploadCard profile={profile} />}
     </div>
   );
 }

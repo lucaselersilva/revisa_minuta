@@ -107,27 +107,11 @@ async function requireProfile() {
 }
 
 async function resolveRepresentedEntity(input: CaseFormInput["represented_entity"], officeId: string) {
-  const supabase = await createClient();
-
   if (input.mode === "existing" && input.entity_id) {
     return input.entity_id;
   }
 
-  const { data, error } = await supabase
-    .from("AA_case_entities")
-    .insert({
-      office_id: officeId,
-      name: input.name,
-      document: input.document ? formatCnpj(input.document) : null
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (error) {
-    throw new Error("Nao foi possivel cadastrar a empresa representada.");
-  }
-
-  return data.id;
+  throw new Error("Selecione uma empresa previamente cadastrada por um administrador.");
 }
 
 export async function createCaseAction(input: CaseFormInput): Promise<ActionResult> {
@@ -290,21 +274,9 @@ export async function createCaseFromUploadAction(
       extracted.represented_entity_name,
       entitiesResult.data ?? []
     );
-    let entityId = matchedEntityId;
+    const entityId = matchedEntityId;
 
-    if (!entityId && extracted.represented_entity_name) {
-      const entityInsert = await supabase
-        .from("AA_case_entities")
-        .insert({
-          office_id: profile.office_id,
-          name: extracted.represented_entity_name,
-          document: extracted.represented_entity_document ? formatCnpj(extracted.represented_entity_document) : null
-        })
-        .select("id")
-        .single<{ id: string }>();
-
-      entityId = entityInsert.data?.id ?? null;
-    } else if (entityId && extracted.represented_entity_document) {
+    if (entityId && extracted.represented_entity_document) {
       await supabase
         .from("AA_case_entities")
         .update({

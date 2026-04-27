@@ -28,12 +28,12 @@ type Props = {
   options: CaseSelectOptions;
   initialCase?: CaseDetail;
   importedFromUpload?: boolean;
+  canManageEntities?: boolean;
 };
 
-export function CaseForm({ options, initialCase, importedFromUpload = false }: Props) {
+export function CaseForm({ options, initialCase, importedFromUpload = false, canManageEntities = false }: Props) {
   const [isPending, startTransition] = useTransition();
   const currentEntity = initialCase?.entity_links[0]?.entity;
-  const defaultEntityMode = currentEntity || options.entities.length > 0 ? "existing" : "new";
   const form = useForm<CaseFormInput>({
     resolver: zodResolver(caseFormSchema),
     defaultValues: {
@@ -46,7 +46,7 @@ export function CaseForm({ options, initialCase, importedFromUpload = false }: P
       responsible_lawyer_id: initialCase?.responsible_lawyer_id ?? undefined,
       represented_entity: currentEntity
         ? { mode: "existing", entity_id: currentEntity.id, name: "", document: currentEntity.document ? formatCnpj(currentEntity.document) : "" }
-        : { mode: defaultEntityMode, entity_id: undefined, name: "", document: "" },
+        : { mode: "existing", entity_id: undefined, name: "", document: "" },
       parties: initialCase?.parties.length
         ? initialCase.parties.map((party) => ({
             role: party.role,
@@ -57,7 +57,6 @@ export function CaseForm({ options, initialCase, importedFromUpload = false }: P
     }
   });
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "parties" });
-  const entityMode = form.watch("represented_entity.mode");
   const selectedEntityId = form.watch("represented_entity.entity_id");
   const selectedEntity = options.entities.find((entity) => entity.id === selectedEntityId);
 
@@ -166,78 +165,41 @@ export function CaseForm({ options, initialCase, importedFromUpload = false }: P
       <Card>
         <CardHeader>
           <CardTitle>Empresa representada</CardTitle>
-          <CardDescription>Vinculo estruturado para futura ficha jurometrica simples.</CardDescription>
+          <CardDescription>Selecione uma empresa previamente cadastrada na base administrativa.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>Origem</Label>
-            <Select value={entityMode} onValueChange={(value) => form.setValue("represented_entity.mode", value as "existing" | "new")}>
+            <Label>Empresa</Label>
+            <Select
+              value={form.watch("represented_entity.entity_id") ?? "none"}
+              onValueChange={(value) => form.setValue("represented_entity.entity_id", value === "none" ? undefined : value)}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="existing">Selecionar existente</SelectItem>
-                <SelectItem value="new">Criar nova</SelectItem>
+                <SelectItem value="none">Selecione</SelectItem>
+                {options.entities.map((entity) => (
+                  <SelectItem key={entity.id} value={entity.id}>
+                    {entity.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {form.formState.errors.represented_entity?.entity_id ? (
+              <p className="text-sm text-destructive">{form.formState.errors.represented_entity.entity_id.message}</p>
+            ) : null}
           </div>
-          {entityMode === "existing" ? (
-            <>
-              <div className="space-y-2">
-                <Label>Empresa</Label>
-                <Select
-                  value={form.watch("represented_entity.entity_id") ?? "none"}
-                  onValueChange={(value) => form.setValue("represented_entity.entity_id", value === "none" ? undefined : value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Selecione</SelectItem>
-                    {options.entities.map((entity) => (
-                      <SelectItem key={entity.id} value={entity.id}>
-                        {entity.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.represented_entity?.entity_id ? (
-                  <p className="text-sm text-destructive">{form.formState.errors.represented_entity.entity_id.message}</p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="selected_entity_document">CNPJ</Label>
-                <Input
-                  id="selected_entity_document"
-                  value={selectedEntity?.document ? formatCnpj(selectedEntity.document) : ""}
-                  placeholder="00.000.000/0000-00"
-                  readOnly
-                  disabled
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="entity_name">Nome</Label>
-                <Input id="entity_name" placeholder="MaxMilhas" {...form.register("represented_entity.name")} />
-                {form.formState.errors.represented_entity?.name ? (
-                  <p className="text-sm text-destructive">{form.formState.errors.represented_entity.name.message}</p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="entity_document">CNPJ</Label>
-                <Input
-                  id="entity_document"
-                  placeholder="00.000.000/0000-00"
-                  value={form.watch("represented_entity.document") ?? ""}
-                  onChange={(event) =>
-                    form.setValue("represented_entity.document", formatCnpj(event.target.value), { shouldDirty: true })
-                  }
-                />
-              </div>
-            </>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="selected_entity_document">CNPJ</Label>
+            <Input
+              id="selected_entity_document"
+              value={selectedEntity?.document ? formatCnpj(selectedEntity.document) : ""}
+              placeholder="00.000.000/0000-00"
+              readOnly
+              disabled
+            />
+          </div>
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="represented_entity_notes">Observacao</Label>
             <Textarea
@@ -246,6 +208,15 @@ export function CaseForm({ options, initialCase, importedFromUpload = false }: P
               {...form.register("represented_entity_notes")}
             />
           </div>
+          {canManageEntities ? (
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              A gestao de empresas fica na area administrativa em <span className="font-medium">Administracao &gt; Empresas</span>.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              Se a empresa ainda nao estiver na lista, solicite o cadastro a um administrador.
+            </p>
+          )}
         </CardContent>
       </Card>
 

@@ -43,19 +43,19 @@ export const caseFormSchema = z
     parties: z.array(casePartySchema).min(1, "Adicione ao menos uma parte.")
   })
   .superRefine((value, ctx) => {
+    if (value.represented_entity.mode !== "existing") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["represented_entity", "mode"],
+        message: "Selecione uma empresa previamente cadastrada."
+      });
+    }
+
     if (value.represented_entity.mode === "existing" && !value.represented_entity.entity_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["represented_entity", "entity_id"],
         message: "Selecione a empresa representada."
-      });
-    }
-
-    if (value.represented_entity.mode === "new" && !value.represented_entity.name) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["represented_entity", "name"],
-        message: "Informe o nome da empresa representada."
       });
     }
   });

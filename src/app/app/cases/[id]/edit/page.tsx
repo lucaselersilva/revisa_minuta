@@ -4,6 +4,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { CaseForm } from "@/features/cases/components/case-form";
 import { getCaseSelectOptions } from "@/features/cases/queries/get-case-options";
 import { getCaseById } from "@/features/cases/queries/get-cases";
+import { getCurrentProfile } from "@/features/profiles/queries/get-current-profile";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -13,9 +14,9 @@ type Props = {
 export default async function EditCasePage({ params, searchParams }: Props) {
   const { id } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const [caseItem, options] = await Promise.all([getCaseById(id), getCaseSelectOptions()]);
+  const [{ profile }, caseItem, options] = await Promise.all([getCurrentProfile(), getCaseById(id), getCaseSelectOptions()]);
 
-  if (!caseItem) {
+  if (!profile || !caseItem) {
     notFound();
   }
 
@@ -29,6 +30,7 @@ export default async function EditCasePage({ params, searchParams }: Props) {
         options={options}
         initialCase={caseItem}
         importedFromUpload={resolvedSearchParams?.source === "upload"}
+        canManageEntities={profile.role === "admin"}
       />
     </PageShell>
   );

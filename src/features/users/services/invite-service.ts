@@ -24,7 +24,7 @@ function resolveAppUrl() {
 }
 
 export function buildInviteRedirectUrl() {
-  return `${resolveAppUrl()}/auth/complete-invite`;
+  return `${resolveAppUrl()}/auth/confirm?next=/auth/complete-invite`;
 }
 
 export async function inviteUserWithSupabaseAuth(email: string) {

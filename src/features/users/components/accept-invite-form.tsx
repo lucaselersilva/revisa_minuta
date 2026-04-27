@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { Loader2, LockKeyhole, MailCheck, UserRound } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -25,6 +26,68 @@ type InviteState =
       fullName: string;
     };
 
+const allowedInviteTypes = new Set<EmailOtpType>(["signup", "invite", "magiclink", "recovery", "email_change", "email"]);
+
+function clearInviteParams() {
+  window.history.replaceState({}, document.title, "/auth/complete-invite");
+}
+
+async function hydrateInviteSessionFromUrl() {
+  const supabase = createClient();
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+  const code = searchParams.get("code");
+
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (!error) {
+      clearInviteParams();
+      return { ok: true as const, error: null };
+    }
+
+    return { ok: false as const, error: error.message };
+  }
+
+  const tokenHash = searchParams.get("token_hash");
+  const typeParam = searchParams.get("type");
+  const type = typeParam && allowedInviteTypes.has(typeParam as EmailOtpType) ? (typeParam as EmailOtpType) : null;
+
+  if (tokenHash && type) {
+    const { error } = await supabase.auth.verifyOtp({
+      type,
+      token_hash: tokenHash
+    });
+
+    if (!error) {
+      clearInviteParams();
+      return { ok: true as const, error: null };
+    }
+
+    return { ok: false as const, error: error.message };
+  }
+
+  const accessToken = hashParams.get("access_token");
+  const refreshToken = hashParams.get("refresh_token");
+
+  if (accessToken && refreshToken) {
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken
+    });
+
+    if (!error) {
+      clearInviteParams();
+      return { ok: true as const, error: null };
+    }
+
+    return { ok: false as const, error: error.message };
+  }
+
+  return { ok: true as const, error: null };
+}
+
 export function AcceptInviteForm() {
   const router = useRouter();
   const [inviteState, setInviteState] = useState<InviteState>({ ready: false, error: null });
@@ -44,6 +107,13 @@ export function AcceptInviteForm() {
     let isMounted = true;
 
     async function loadInviteState() {
+      const hydrationResult = await hydrateInviteSessionFromUrl();
+
+      if (!hydrationResult.ok) {
+        setInviteState({ ready: false, error: hydrationResult.error ?? "Nao foi possivel validar o link do convite." });
+        return;
+      }
+
       const supabase = createClient();
       await supabase.auth.getSession();
 

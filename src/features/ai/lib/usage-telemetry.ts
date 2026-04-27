@@ -28,5 +28,5 @@ export function normalizeAiUsageTelemetry(value: unknown): AiUsageTelemetry {
 }
 
 export function hasAiUsageTelemetry(value: AiUsageTelemetry | null | undefined) {
-  return Boolean(value) && value.total_tokens > 0;
+  return (value?.total_tokens ?? 0) > 0;
 }

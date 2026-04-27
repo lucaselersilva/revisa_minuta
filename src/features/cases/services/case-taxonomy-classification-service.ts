@@ -15,7 +15,6 @@ import { extractStructuredDocumentAnalysis } from "@/features/document-ingestion
 import { isPreAnalysisEligibleDocumentType } from "@/features/document-ingestion/lib/eligible-documents";
 import { createClient } from "@/lib/supabase/server";
 import type { DocumentIngestion, Profile, Taxonomy } from "@/types/database";
-import type { AiUsageTelemetry } from "@/features/ai/lib/usage-telemetry";
 
 const MAX_SNIPPET_CHARS = 1200;
 const MAX_CONTEXT_CHARS = 22000;

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { ProfessionalMarkdownReport } from "@/components/shared/professional-markdown-report";
 import { applyCaseTaxonomySuggestionAction, generateCaseTaxonomySuggestionAction } from "@/features/cases/actions/case-taxonomy-actions";
 import { extractPersistedCaseTaxonomySuggestion } from "@/features/cases/lib/case-taxonomy-classification-schema";
 import { CaseStatusBadge } from "@/features/cases/components/case-status-badge";
@@ -910,11 +911,19 @@ function DefenseWorkspace({
               <div className="rounded-lg border bg-white p-5">
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold">Markdown gerado</h3>
+                  <h3 className="font-semibold">Relatorio exportavel</h3>
                 </div>
-                <pre className="mt-4 overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-6 text-slate-100 whitespace-pre-wrap">
-                  {savedConformityReport?.report_markdown}
-                </pre>
+                <div className="mt-4">
+                  <ProfessionalMarkdownReport
+                    title="Relatorio de conformidade da defesa"
+                    subtitle="Consolidado interno para conferencia de aderencia da contestacao, autenticidade documental e recomendacoes prioritarias."
+                    markdown={savedConformityReport?.report_markdown ?? null}
+                    exportFileName="relatorio-conformidade-defesa"
+                    generatedAt={savedConformityReport?.generated_at}
+                    promptVersion={savedConformityReport?.prompt_version ?? null}
+                    modelName={savedConformityReport?.model_name ?? null}
+                  />
+                </div>
               </div>
             </>
           ) : null}

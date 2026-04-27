@@ -1,6 +1,7 @@
 import "server-only";
 
 import { generateAnthropicResponse, type AnthropicContentBlock } from "@/features/ai/clients/anthropic-client";
+import type { AiUsageTelemetry } from "@/features/ai/lib/usage-telemetry";
 import {
   buildDocumentAnalysisInstruction,
   buildDocumentAnalysisSystemPrompt,
@@ -11,11 +12,12 @@ import type { StructuredDocumentAnalysis } from "@/features/document-ingestion/t
 import type { CaseDocument } from "@/types/database";
 
 type AnalysisResult =
-  | {
+    | {
       status: "completed";
       report: StructuredDocumentAnalysis;
       modelName: string;
       promptVersion: string;
+      usage: AiUsageTelemetry;
     }
   | {
       status: "skipped" | "failed";
@@ -121,7 +123,8 @@ export async function analyzeProcessedDocument({
       status: "completed",
       report,
       modelName: response.modelName,
-      promptVersion: DOCUMENT_ANALYSIS_PROMPT_VERSION
+      promptVersion: DOCUMENT_ANALYSIS_PROMPT_VERSION,
+      usage: response.usage
     };
   } catch (error) {
     return {

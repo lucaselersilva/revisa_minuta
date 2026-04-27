@@ -4,6 +4,7 @@ import {
   DEFENSE_CONFORMITY_PROMPT_VERSION
 } from "@/features/ai/prompts/defense-conformity-prompt";
 import { generateStructuredAnthropicResponse } from "@/features/ai/clients/anthropic-client";
+import { normalizeAiUsageTelemetry, type AiUsageTelemetry } from "@/features/ai/lib/usage-telemetry";
 import { renderDefenseConformityMarkdown } from "@/features/ai/services/render-defense-conformity-markdown";
 import { normalizeDefenseConformityReportPayload } from "@/features/ai/types/defense-conformity-report";
 import { getCaseById } from "@/features/cases/queries/get-cases";
@@ -11,6 +12,10 @@ import { buildDefenseConformityContext } from "@/features/document-ingestion/ser
 import type { Profile } from "@/types/database";
 
 const DEFENSE_CONFORMITY_MAX_TOKENS = 7000;
+
+type UsageAccumulator = {
+  usage: AiUsageTelemetry;
+};
 
 function extractJsonPayload(text: string) {
   const trimmed = text.trim();
@@ -28,7 +33,18 @@ function tryParseJsonPayload(text: string) {
   return JSON.parse(extractJsonPayload(text));
 }
 
-async function repairDefenseConformityJson(rawText: string) {
+function addUsage(accumulator: UsageAccumulator, usage: AiUsageTelemetry) {
+  accumulator.usage = normalizeAiUsageTelemetry({
+    input_tokens: accumulator.usage.input_tokens + usage.input_tokens,
+    output_tokens: accumulator.usage.output_tokens + usage.output_tokens,
+    cache_creation_input_tokens:
+      accumulator.usage.cache_creation_input_tokens + usage.cache_creation_input_tokens,
+    cache_read_input_tokens: accumulator.usage.cache_read_input_tokens + usage.cache_read_input_tokens,
+    total_tokens: accumulator.usage.total_tokens + usage.total_tokens
+  });
+}
+
+async function repairDefenseConformityJson(rawText: string, accumulator?: UsageAccumulator) {
   const repairResponse = await generateStructuredAnthropicResponse({
     systemPrompt: [
       "Voce atua como reparador tecnico de JSON.",
@@ -41,10 +57,14 @@ async function repairDefenseConformityJson(rawText: string) {
     maxTokens: DEFENSE_CONFORMITY_MAX_TOKENS
   });
 
+  if (accumulator) {
+    addUsage(accumulator, repairResponse.usage);
+  }
+
   return tryParseJsonPayload(repairResponse.text);
 }
 
-async function parseDefenseConformityResponse(text: string) {
+async function parseDefenseConformityResponse(text: string, accumulator?: UsageAccumulator) {
   try {
     return tryParseJsonPayload(text);
   } catch (error) {
@@ -56,7 +76,7 @@ async function parseDefenseConformityResponse(text: string) {
       throw error;
     }
 
-    return repairDefenseConformityJson(text);
+    return repairDefenseConformityJson(text, accumulator);
   }
 }
 
@@ -113,8 +133,11 @@ export async function generateDefenseConformityReport(caseId: string, profile: P
       userPrompt: buildDefenseConformityUserPrompt(context.promptContext),
       maxTokens: DEFENSE_CONFORMITY_MAX_TOKENS
     });
+    const usageAccumulator: UsageAccumulator = {
+      usage: normalizeAiUsageTelemetry(response.usage)
+    };
 
-    const parsedJson = await parseDefenseConformityResponse(response.text);
+    const parsedJson = await parseDefenseConformityResponse(response.text, usageAccumulator);
     const report = normalizeDefenseConformityReportPayload(parsedJson);
     const reportMarkdown = renderDefenseConformityMarkdown(report);
 
@@ -123,7 +146,10 @@ export async function generateDefenseConformityReport(caseId: string, profile: P
       message: "Relatorio de conformidade gerado em memoria.",
       promptVersion: DEFENSE_CONFORMITY_PROMPT_VERSION,
       modelName: response.modelName,
-      inputSummary: context.inputSummary,
+      inputSummary: {
+        ...context.inputSummary,
+        usage: usageAccumulator.usage
+      },
       report,
       reportMarkdown
     };

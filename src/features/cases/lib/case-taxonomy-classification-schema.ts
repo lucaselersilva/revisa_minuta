@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+const aiUsageTelemetrySchema = z.object({
+  input_tokens: z.number().int().min(0),
+  output_tokens: z.number().int().min(0),
+  cache_creation_input_tokens: z.number().int().min(0),
+  cache_read_input_tokens: z.number().int().min(0),
+  total_tokens: z.number().int().min(0)
+});
+
 export const taxonomyClassificationConfidenceSchema = z.enum(["low", "medium", "high"]);
 
 export const caseTaxonomyClassificationSchema = z.object({
@@ -21,6 +29,7 @@ export const persistedCaseTaxonomySuggestionSchema = z.object({
   model_name: z.string().trim().min(2).nullable(),
   generated_at: z.string().trim().min(2),
   generated_by: z.string().uuid().nullable(),
+  usage: aiUsageTelemetrySchema.optional(),
   source_summary: z.object({
     total_documents: z.number().int().min(0),
     processed_documents: z.number().int().min(0),

@@ -11,6 +11,7 @@ export type PersistedDefenseConformityReport = {
   generated_by: string;
   report_json: DefenseConformityReportOutput;
   report_markdown: string;
+  usage?: Record<string, unknown>;
 };
 
 export function extractDefenseConformityFromMetadata(
@@ -44,7 +45,11 @@ export function extractDefenseConformityFromMetadata(
       generated_at: generatedAt,
       generated_by: generatedBy,
       report_json: normalizeDefenseConformityReportPayload(record.report_json),
-      report_markdown: reportMarkdown
+      report_markdown: reportMarkdown,
+      usage:
+        record.usage && typeof record.usage === "object" && !Array.isArray(record.usage)
+          ? (record.usage as Record<string, unknown>)
+          : undefined
     };
   } catch {
     return null;

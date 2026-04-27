@@ -1,3 +1,5 @@
+import { normalizeAiUsageTelemetry, type AiUsageTelemetry } from "@/features/ai/lib/usage-telemetry";
+
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const STABLE_DEFAULT_MODEL = "claude-sonnet-4-20250514";
 const FALLBACK_MODEL = "claude-3-7-sonnet-latest";
@@ -99,6 +101,7 @@ async function requestAnthropic({
 
   const data = (await response.json()) as {
     content?: Array<{ type: string; text?: string }>;
+    usage?: Record<string, unknown>;
   };
   const text = data.content?.find((item) => item.type === "text")?.text;
 
@@ -108,7 +111,8 @@ async function requestAnthropic({
 
   return {
     modelName,
-    text
+    text,
+    usage: normalizeAiUsageTelemetry(data.usage)
   };
 }
 
@@ -162,7 +166,7 @@ export async function generateAnthropicResponse({
   systemPrompt: string;
   userContent: string | AnthropicContentBlock[];
   maxTokens?: number;
-}) {
+}): Promise<{ modelName: string; text: string; usage: AiUsageTelemetry }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {

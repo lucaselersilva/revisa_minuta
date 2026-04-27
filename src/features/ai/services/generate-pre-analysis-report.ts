@@ -1,5 +1,6 @@
 import { buildPreAnalysisSystemPrompt, buildPreAnalysisUserPrompt, PRE_ANALYSIS_PROMPT_VERSION } from "@/features/ai/prompts/pre-analysis-prompt";
 import { generateAnthropicResponse, generateStructuredAnthropicResponse, type AnthropicContentBlock } from "@/features/ai/clients/anthropic-client";
+import { normalizeAiUsageTelemetry, type AiUsageTelemetry } from "@/features/ai/lib/usage-telemetry";
 import { renderPreAnalysisMarkdown } from "@/features/ai/services/render-pre-analysis-markdown";
 import { normalizePreAnalysisReportPayload } from "@/features/ai/types/pre-analysis-report";
 import { getCaseById } from "@/features/cases/queries/get-cases";
@@ -20,6 +21,10 @@ type PreAnalysisFailureDiagnostics = {
   normalizationError?: string | null;
   repairAttempted?: boolean;
   repairedJson?: unknown;
+};
+
+type UsageAccumulator = {
+  usage: AiUsageTelemetry;
 };
 
 class PreAnalysisGenerationError extends Error {
@@ -277,7 +282,18 @@ function tryParseJsonPayload(text: string) {
   return JSON.parse(extractJsonPayload(text));
 }
 
-async function repairPreAnalysisJson(rawText: string) {
+function addUsage(accumulator: UsageAccumulator, usage: AiUsageTelemetry) {
+  accumulator.usage = normalizeAiUsageTelemetry({
+    input_tokens: accumulator.usage.input_tokens + usage.input_tokens,
+    output_tokens: accumulator.usage.output_tokens + usage.output_tokens,
+    cache_creation_input_tokens:
+      accumulator.usage.cache_creation_input_tokens + usage.cache_creation_input_tokens,
+    cache_read_input_tokens: accumulator.usage.cache_read_input_tokens + usage.cache_read_input_tokens,
+    total_tokens: accumulator.usage.total_tokens + usage.total_tokens
+  });
+}
+
+async function repairPreAnalysisJson(rawText: string, accumulator?: UsageAccumulator) {
   const repairResponse = await generateStructuredAnthropicResponse({
     systemPrompt: [
       "Voce atua como reparador tecnico de JSON.",
@@ -294,10 +310,14 @@ async function repairPreAnalysisJson(rawText: string) {
     maxTokens: PRE_ANALYSIS_MAX_TOKENS
   });
 
+  if (accumulator) {
+    addUsage(accumulator, repairResponse.usage);
+  }
+
   return tryParseJsonPayload(repairResponse.text);
 }
 
-async function repairPreAnalysisStructure(rawText: string, failureDetail: string) {
+async function repairPreAnalysisStructure(rawText: string, failureDetail: string, accumulator?: UsageAccumulator) {
   const repairResponse = await generateStructuredAnthropicResponse({
     systemPrompt: [
       "Voce atua como reparador tecnico de estrutura JSON para um laudo juridico operacional.",
@@ -317,10 +337,14 @@ async function repairPreAnalysisStructure(rawText: string, failureDetail: string
     maxTokens: PRE_ANALYSIS_MAX_TOKENS
   });
 
+  if (accumulator) {
+    addUsage(accumulator, repairResponse.usage);
+  }
+
   return tryParseJsonPayload(repairResponse.text);
 }
 
-async function parsePreAnalysisResponse(text: string) {
+async function parsePreAnalysisResponse(text: string, accumulator?: UsageAccumulator) {
   try {
     return tryParseJsonPayload(text);
   } catch (error) {
@@ -357,7 +381,7 @@ async function parsePreAnalysisResponse(text: string) {
     }
 
     try {
-      return await repairPreAnalysisJson(text);
+      return await repairPreAnalysisJson(text, accumulator);
     } catch {
       throw new PreAnalysisGenerationError(
         "A resposta da IA nao veio no formato estruturado esperado para o laudo.",
@@ -371,15 +395,15 @@ async function parsePreAnalysisResponse(text: string) {
   }
 }
 
-async function normalizePreAnalysisResponse(text: string) {
-  const parsedJson = await parsePreAnalysisResponse(text);
+async function normalizePreAnalysisResponse(text: string, accumulator?: UsageAccumulator) {
+  const parsedJson = await parsePreAnalysisResponse(text, accumulator);
 
   try {
     return normalizePreAnalysisReportPayload(parsedJson);
   } catch (error) {
     const failureDetail = error instanceof Error ? error.message : "Falha desconhecida na normalizacao do laudo.";
     try {
-      const repairedJson = await repairPreAnalysisStructure(text, failureDetail);
+      const repairedJson = await repairPreAnalysisStructure(text, failureDetail, accumulator);
       try {
         return normalizePreAnalysisReportPayload(repairedJson);
       } catch (repairError) {
@@ -522,8 +546,11 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
     });
 
     const response = await generatePreAnalysisAnthropicReport(context.promptContext, userContent);
+    const usageAccumulator: UsageAccumulator = {
+      usage: normalizeAiUsageTelemetry(response.usage)
+    };
 
-    const report = await normalizePreAnalysisResponse(response.text);
+    const report = await normalizePreAnalysisResponse(response.text, usageAccumulator);
     const reportMarkdown = renderPreAnalysisMarkdown(report);
 
     const { data: createdReport, error } = await supabase
@@ -535,7 +562,10 @@ export async function generatePreAnalysisReport(caseId: string, profile: Profile
         status: "completed",
         model_provider: "anthropic",
         model_name: response.modelName,
-        input_summary: context.inputSummary,
+        input_summary: {
+          ...context.inputSummary,
+          usage: usageAccumulator.usage
+        },
         prompt_version: PRE_ANALYSIS_PROMPT_VERSION,
         report_json: report,
         report_markdown: reportMarkdown,

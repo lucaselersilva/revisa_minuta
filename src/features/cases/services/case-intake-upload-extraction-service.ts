@@ -10,6 +10,7 @@ import {
   caseIntakeUploadExtractionSchema,
   type CaseIntakeUploadExtraction
 } from "@/features/cases/lib/case-intake-upload-schema";
+import type { AiUsageTelemetry } from "@/features/ai/lib/usage-telemetry";
 
 type ExtractedAuthor = CaseIntakeUploadExtraction["authors"][number];
 
@@ -318,7 +319,13 @@ export async function extractCaseDraftFromUploadedDocument({
   mimeType: string | null;
   fileBuffer: Buffer;
   extractedText: string | null;
-}) {
+}): Promise<{
+  extraction: CaseIntakeUploadExtraction;
+  modelName: string | null;
+  promptVersion: string;
+  usedFallback: boolean;
+  usage?: AiUsageTelemetry;
+}> {
   const fallback = regexFallback(extractedText, fileName);
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -395,7 +402,8 @@ export async function extractCaseDraftFromUploadedDocument({
       },
       modelName: response.modelName,
       promptVersion: CASE_INTAKE_UPLOAD_PROMPT_VERSION,
-      usedFallback: false
+      usedFallback: false,
+      usage: response.usage
     };
   } catch {
     return {

@@ -415,6 +415,7 @@ export async function createCaseFromUploadAction(
           mime_type: file.type,
           intake_prompt_version: extractionResult.promptVersion,
           intake_model_name: extractionResult.modelName,
+          intake_usage: extractionResult.usage ?? null,
           intake_used_fallback: extractionResult.usedFallback,
           intake_summary: extracted.summary,
           intake_cautionary_notes: extracted.cautionary_notes

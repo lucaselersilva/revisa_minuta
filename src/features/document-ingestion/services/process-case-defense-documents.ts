@@ -87,6 +87,7 @@ export async function processCaseDefenseDocuments(caseId: string, profile: Profi
               analysis_status: "completed",
               analysis_model_name: analysis.modelName,
               analysis_prompt_version: analysis.promptVersion,
+              usage: analysis.usage,
               document_analysis: analysis.report
             }
           : {

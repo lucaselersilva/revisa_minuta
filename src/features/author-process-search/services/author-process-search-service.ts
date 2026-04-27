@@ -12,7 +12,9 @@ import type {
   Profile
 } from "@/types/database";
 
-const ESCAVADOR_API_URL = "https://api.escavador.com/api/v1";
+const ESCAVADOR_API_URL = "https://api.escavador.com/api/v2";
+const ESCAVADOR_DEFAULT_LIMIT = 100;
+const ESCAVADOR_ALL_ORIGINS = "TODOS";
 const MAX_CPF_IDENTIFICATION_CHARS = 18000;
 
 const aiCpfAssociationSchema = z.object({
@@ -36,19 +38,6 @@ type AuthorCpfResolution = {
   needsHumanValidation: boolean;
 };
 
-type EscavadorAsyncSearchResponse = {
-  id?: number | string;
-  link_api?: string | null;
-  status?: string | null;
-  motivo_erro?: string | null;
-  tribunal?: {
-    sigla?: string | null;
-    nome?: string | null;
-  } | null;
-  resposta?: unknown;
-  valor?: string | null;
-};
-
 type EscavadorNormalizedProcess = {
   process_number: string;
   tribunal: string | null;
@@ -57,6 +46,17 @@ type EscavadorNormalizedProcess = {
   last_movement_at: string | null;
   source_link: string | null;
   raw_payload: Record<string, unknown>;
+};
+
+type EscavadorInvolvedSearchResponse = {
+  involvedFound?: Record<string, unknown> | null;
+  envolvido_encontrado?: Record<string, unknown> | null;
+  items?: unknown[];
+  links?: {
+    next?: string | null;
+  } | null;
+  paginator?: Record<string, unknown> | null;
+  meta?: Record<string, unknown> | null;
 };
 
 function digitsOnly(value: string) {
@@ -126,20 +126,6 @@ function extractJsonText(value: string) {
 
   const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   return match?.[1]?.trim() ?? trimmed;
-}
-
-function normalizeEscavadorStatus(value: string | null | undefined): AuthorExternalSearchStatus {
-  const normalized = (value ?? "").trim().toUpperCase();
-
-  if (!normalized) return "failed";
-  if (normalized.includes("PEND")) return "pending";
-  if (normalized.includes("SUCESSO") || normalized.includes("CONCL") || normalized.includes("FINAL")) return "completed";
-  if (normalized.includes("NAO_ENCONTRADO") || normalized.includes("NÃO_ENCONTRADO") || normalized.includes("SEM_RESULTADO")) {
-    return "not_found";
-  }
-  if (normalized.includes("ERRO") || normalized.includes("FALH")) return "failed";
-
-  return "failed";
 }
 
 function resolveEscavadorToken() {
@@ -255,8 +241,9 @@ function inferTribunalFromCaseNumber(caseNumber: string | null | undefined) {
 function resolveTargetOrigins(caseNumber: string | null | undefined) {
   const configuredOrigins = uniqueStrings((process.env.ESCAVADOR_DEFAULT_ORIGINS ?? "").split(",").map((item) => item.toUpperCase()));
   const inferred = inferTribunalFromCaseNumber(caseNumber);
+  const resolved = uniqueStrings([...configuredOrigins, inferred ?? null]);
 
-  return uniqueStrings([...configuredOrigins, inferred ?? null, configuredOrigins.length === 0 && !inferred ? "CNJ" : null]);
+  return resolved.length ? resolved : [ESCAVADOR_ALL_ORIGINS];
 }
 
 async function fetchInitialDocumentText(caseId: string) {
@@ -415,14 +402,16 @@ async function identifyAuthorCpfs(caseId: string) {
   };
 }
 
-async function callEscavador(path: string, init?: RequestInit) {
+async function callEscavador(urlOrPath: string, init?: RequestInit) {
   const token = resolveEscavadorToken();
-  const response = await fetch(`${ESCAVADOR_API_URL}${path}`, {
+  const isAbsoluteUrl = /^https?:\/\//i.test(urlOrPath);
+  const response = await fetch(isAbsoluteUrl ? urlOrPath : `${ESCAVADOR_API_URL}${urlOrPath}`, {
     ...init,
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(init?.headers ?? {})
     }
   });
@@ -453,45 +442,6 @@ function safeJsonParse(value: string) {
   }
 }
 
-async function submitEscavadorDocumentSearch({ tribunal, cpf }: { tribunal: string; cpf: string }) {
-  const response = await callEscavador(`/tribunal/${tribunal}/busca-por-documento/async`, {
-    method: "POST",
-    body: JSON.stringify({
-      numero_documento: cpf,
-      permitir_parcial: 0,
-      send_callback: 0
-    })
-  });
-
-  return {
-    payload: response.data as EscavadorAsyncSearchResponse & Record<string, unknown>,
-    creditsUsed: response.creditsUsed
-  };
-}
-
-async function fetchEscavadorAsyncResult(resultUrl: string) {
-  const token = resolveEscavadorToken();
-  const response = await fetch(resultUrl, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`
-    }
-  });
-  const bodyText = await response.text();
-  const parsedBody = bodyText ? safeJsonParse(bodyText) : null;
-
-  if (!response.ok) {
-    const message =
-      typeof parsedBody === "object" && parsedBody && "error" in parsedBody
-        ? String(parsedBody.error)
-        : bodyText || `Escavador retornou HTTP ${response.status}.`;
-    throw new Error(message);
-  }
-
-  return parsedBody as EscavadorAsyncSearchResponse & Record<string, unknown>;
-}
-
 function objectRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -500,56 +450,124 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function extractProcessEntriesFromAsyncResponse(payload: Record<string, unknown>, fallbackTribunal: string) {
-  const answer = payload.resposta;
-  const processEntries: EscavadorNormalizedProcess[] = [];
-  const systems = Array.isArray(answer) ? answer : [answer];
+function toEscavadorStatus(processesCount: number): AuthorExternalSearchStatus {
+  return processesCount > 0 ? "completed" : "not_found";
+}
 
-  for (const system of systems) {
-    const systemRecord = objectRecord(system);
-    if (!systemRecord) continue;
+function buildEscavadorInvolvedSearchPath({ cpf, tribunal }: { cpf: string; tribunal: string }) {
+  const params = new URLSearchParams();
+  params.set("cpf_cnpj", digitsOnly(cpf));
+  params.set("limit", String(ESCAVADOR_DEFAULT_LIMIT));
 
-    const processes = Array.isArray(systemRecord.processos) ? systemRecord.processos : [];
+  if (tribunal !== ESCAVADOR_ALL_ORIGINS) {
+    params.append("tribunais[]", tribunal);
+  }
 
-    for (const rawProcess of processes) {
-      const processRecord = objectRecord(rawProcess);
-      if (!processRecord) continue;
+  return `/envolvido/processos?${params.toString()}`;
+}
 
-      const processNumber = String(
-        processRecord.numero_unico ??
-          processRecord.numero ??
-          processRecord.numero_processo ??
-          processRecord.cnj ??
-          ""
-      ).trim();
+async function fetchEscavadorInvolvedProcessesPage(pathOrUrl: string) {
+  const response = await callEscavador(pathOrUrl, { method: "GET" });
 
-      if (!processNumber) continue;
+  return {
+    payload: (response.data ?? {}) as EscavadorInvolvedSearchResponse & Record<string, unknown>,
+    creditsUsed: response.creditsUsed
+  };
+}
 
-      const subjectSummary = uniqueStrings([
-        typeof systemRecord.nome === "string" ? systemRecord.nome : null,
-        typeof processRecord.classe === "string" ? processRecord.classe : null,
-        typeof processRecord.assunto === "string" ? processRecord.assunto : null
-      ]).join(" | ");
+async function fetchEscavadorInvolvedProcesses({ cpf, tribunal }: { cpf: string; tribunal: string }) {
+  const pages: Array<Record<string, unknown>> = [];
+  const items: Record<string, unknown>[] = [];
+  const creditsUsed: string[] = [];
+  let nextPathOrUrl: string | null = buildEscavadorInvolvedSearchPath({ cpf, tribunal });
 
-      processEntries.push({
-        process_number: processNumber,
-        tribunal:
-          (typeof processRecord.origem === "string" ? processRecord.origem : null) ??
-          (typeof payload.tribunal === "object" && payload.tribunal && "sigla" in payload.tribunal
-            ? String(payload.tribunal.sigla ?? "")
-            : null) ??
-          fallbackTribunal,
-        role_hint: typeof systemRecord.instancia === "string" ? systemRecord.instancia : null,
-        subject_summary: subjectSummary || null,
-        last_movement_at:
-          (typeof processRecord.last_update_time === "string" ? processRecord.last_update_time : null) ??
-          (typeof processRecord.data === "string" ? processRecord.data : null),
-        source_link:
-          (typeof processRecord.url === "string" ? processRecord.url : null) ??
-          (typeof processRecord.link === "string" ? processRecord.link : null),
-        raw_payload: processRecord
-      });
+  while (nextPathOrUrl) {
+    const response = await fetchEscavadorInvolvedProcessesPage(nextPathOrUrl);
+    pages.push(response.payload);
+
+    if (response.creditsUsed) {
+      creditsUsed.push(response.creditsUsed);
     }
+
+    const pageItems = Array.isArray(response.payload.items) ? response.payload.items : [];
+    for (const item of pageItems) {
+      const record = objectRecord(item);
+      if (record) {
+        items.push(record);
+      }
+    }
+
+    const nextLink = objectRecord(response.payload.links)?.next;
+    nextPathOrUrl = typeof nextLink === "string" && nextLink.trim() ? nextLink : null;
+  }
+
+  const firstPage = pages[0] ?? {};
+
+  return {
+    payload: {
+      ...firstPage,
+      items,
+      pages_count: pages.length
+    },
+    creditsUsed
+  };
+}
+
+function extractProcessEntriesFromV2Response(payload: Record<string, unknown>, fallbackTribunal: string) {
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const processEntries: EscavadorNormalizedProcess[] = [];
+
+  for (const rawItem of rawItems) {
+    const item = objectRecord(rawItem);
+    if (!item) continue;
+
+    const processNumber = String(item.numero_cnj ?? item.numero ?? item.cnj ?? "").trim();
+    if (!processNumber) continue;
+
+    const unidadeOrigem = objectRecord(item.unidade_origem);
+    const estadoOrigem = objectRecord(item.estado_origem);
+    const firstFonte = Array.isArray(item.fontes) ? objectRecord(item.fontes[0]) : null;
+    const capa = objectRecord(firstFonte?.capa);
+    const assuntoPrincipal = objectRecord(capa?.assunto_principal_normalizado);
+    const tiposEnvolvidoPesquisado = Array.isArray(firstFonte?.tipos_envolvido_pesquisado)
+      ? objectRecord(firstFonte?.tipos_envolvido_pesquisado[0])
+      : null;
+
+    const tribunal =
+      (typeof unidadeOrigem?.tribunal_sigla === "string" ? unidadeOrigem.tribunal_sigla : null) ??
+      (typeof objectRecord(firstFonte?.tribunal)?.sigla === "string" ? String(objectRecord(firstFonte?.tribunal)?.sigla) : null) ??
+      fallbackTribunal;
+
+    const subjectSummary = uniqueStrings([
+      typeof capa?.classe === "string" ? capa.classe : null,
+      typeof capa?.assunto === "string" ? capa.assunto : null,
+      typeof assuntoPrincipal?.nome === "string" ? assuntoPrincipal.nome : null,
+      typeof item.titulo_polo_ativo === "string" ? `Polo ativo: ${item.titulo_polo_ativo}` : null,
+      typeof item.titulo_polo_passivo === "string" ? `Polo passivo: ${item.titulo_polo_passivo}` : null,
+      typeof estadoOrigem?.sigla === "string" ? `UF: ${estadoOrigem.sigla}` : null
+    ]).join(" | ");
+
+    const sourceLink =
+      (typeof firstFonte?.url === "string" ? firstFonte.url : null) ??
+      (typeof item.url === "string" ? item.url : null);
+
+    const roleHint = uniqueStrings([
+      typeof tiposEnvolvidoPesquisado?.tipo_normalizado === "string" ? tiposEnvolvidoPesquisado.tipo_normalizado : null,
+      typeof tiposEnvolvidoPesquisado?.tipo === "string" ? tiposEnvolvidoPesquisado.tipo : null,
+      typeof tiposEnvolvidoPesquisado?.polo === "string" ? tiposEnvolvidoPesquisado.polo : null
+    ]).join(" | ");
+
+    processEntries.push({
+      process_number: processNumber,
+      tribunal,
+      role_hint: roleHint || null,
+      subject_summary: subjectSummary || null,
+      last_movement_at:
+        (typeof item.data_ultima_movimentacao === "string" ? item.data_ultima_movimentacao : null) ??
+        (typeof firstFonte?.data_ultima_movimentacao === "string" ? firstFonte.data_ultima_movimentacao : null),
+      source_link: sourceLink,
+      raw_payload: item
+    });
   }
 
   return processEntries.filter(
@@ -594,9 +612,11 @@ async function upsertSearchRecord({
     cpf,
     tribunal,
     status,
-    provider_search_id: responsePayload.id ? String(responsePayload.id) : existing?.provider_search_id ?? null,
-    provider_result_url:
-      typeof responsePayload.link_api === "string" ? responsePayload.link_api : existing?.provider_result_url ?? null,
+    provider_search_id:
+      typeof responsePayload.request_hash === "string"
+        ? responsePayload.request_hash
+        : existing?.provider_search_id ?? null,
+    provider_result_url: existing?.provider_result_url ?? null,
     request_payload: requestPayload,
     raw_response: responsePayload,
     error_message: errorMessage,
@@ -662,6 +682,78 @@ async function replaceSearchProcesses({
   return data ?? [];
 }
 
+async function executeV2Search({
+  existing,
+  caseId,
+  officeId,
+  requestedBy,
+  partyId,
+  authorName,
+  cpf,
+  tribunal,
+  cpfSource,
+  cpfReasoning,
+  needsHumanValidation
+}: {
+  existing?: AuthorExternalSearch | null;
+  caseId: string;
+  officeId: string;
+  requestedBy: string | null;
+  partyId: string;
+  authorName: string;
+  cpf: string;
+  tribunal: string;
+  cpfSource: string;
+  cpfReasoning: string;
+  needsHumanValidation: boolean;
+}) {
+  const requestPath = buildEscavadorInvolvedSearchPath({ cpf, tribunal });
+  const response = await fetchEscavadorInvolvedProcesses({ cpf, tribunal });
+  const extractedProcesses = extractProcessEntriesFromV2Response(response.payload, tribunal);
+  const finalStatus = toEscavadorStatus(extractedProcesses.length);
+  const requestPayload = {
+    author_name: authorName,
+    cpf_source: cpfSource,
+    cpf_reasoning: cpfReasoning,
+    needs_human_validation: needsHumanValidation,
+    target_origin: tribunal,
+    endpoint: "/envolvido/processos",
+    query: {
+      cpf_cnpj: digitsOnly(cpf),
+      limit: ESCAVADOR_DEFAULT_LIMIT,
+      tribunais: tribunal === ESCAVADOR_ALL_ORIGINS ? [] : [tribunal]
+    },
+    request_path: requestPath,
+    credits_used: response.creditsUsed,
+    pages_count: response.payload.pages_count ?? 1
+  };
+
+  const persistedSearch = await upsertSearchRecord({
+    existing,
+    caseId,
+    officeId,
+    requestedBy,
+    partyId,
+    cpf,
+    tribunal,
+    requestPayload,
+    responsePayload: response.payload,
+    status: finalStatus,
+    errorMessage: null
+  });
+
+  const persistedProcesses = await replaceSearchProcesses({
+    search: persistedSearch,
+    processes: extractedProcesses
+  });
+
+  return {
+    search: persistedSearch,
+    status: finalStatus,
+    processesFound: persistedProcesses.length
+  };
+}
+
 export async function requestAuthorExternalSearches(caseId: string, profile: Profile) {
   if (!profile.office_id) {
     throw new Error("Perfil interno sem office_id.");
@@ -685,10 +777,6 @@ export async function requestAuthorExternalSearches(caseId: string, profile: Pro
     };
   }
 
-  if (identified.origins.length === 0) {
-    throw new Error("Nao foi possivel definir um tribunal de consulta para o caso.");
-  }
-
   const admin = createAdminClient();
   const { data: existingSearches } = await admin
     .from("AA_author_external_searches")
@@ -698,6 +786,7 @@ export async function requestAuthorExternalSearches(caseId: string, profile: Pro
 
   let submitted = 0;
   let skipped = 0;
+  let processesFound = 0;
   const unresolved = identified.resolutions.filter((item) => !item.cpf).length;
 
   for (const resolution of identified.resolutions) {
@@ -719,51 +808,23 @@ export async function requestAuthorExternalSearches(caseId: string, profile: Pro
         continue;
       }
 
-      const requestPayload = {
-        author_name: resolution.party.name,
-        cpf_source: resolution.source,
-        cpf_reasoning: resolution.reasoning,
-        needs_human_validation: resolution.needsHumanValidation,
-        target_origin: origin
-      };
-
       try {
-        const response = await submitEscavadorDocumentSearch({
-          tribunal: origin,
-          cpf: resolution.cpf
-        });
-        const normalizedStatus = normalizeEscavadorStatus(response.payload.status);
-        const extractedProcesses =
-          normalizedStatus === "completed"
-            ? extractProcessEntriesFromAsyncResponse(response.payload, origin)
-            : [];
-        const finalStatus =
-          normalizedStatus === "completed" && extractedProcesses.length === 0 ? "not_found" : normalizedStatus;
-
-        const persistedSearch = await upsertSearchRecord({
+        const result = await executeV2Search({
           existing,
           caseId,
           officeId: profile.office_id,
           requestedBy: profile.id,
           partyId: resolution.party.id,
+          authorName: resolution.party.name,
           cpf: resolution.cpf,
           tribunal: origin,
-          requestPayload: {
-            ...requestPayload,
-            credits_used: response.creditsUsed
-          },
-          responsePayload: response.payload,
-          status: finalStatus,
-          errorMessage: response.payload.motivo_erro ?? null
+          cpfSource: resolution.source,
+          cpfReasoning: resolution.reasoning,
+          needsHumanValidation: resolution.needsHumanValidation
         });
 
-        if (finalStatus === "completed") {
-          await replaceSearchProcesses({
-            search: persistedSearch,
-            processes: extractedProcesses
-          });
-        }
         submitted += 1;
+        processesFound += result.processesFound;
       } catch (error) {
         await upsertSearchRecord({
           existing,
@@ -773,7 +834,14 @@ export async function requestAuthorExternalSearches(caseId: string, profile: Pro
           partyId: resolution.party.id,
           cpf: resolution.cpf,
           tribunal: origin,
-          requestPayload,
+          requestPayload: {
+            author_name: resolution.party.name,
+            cpf_source: resolution.source,
+            cpf_reasoning: resolution.reasoning,
+            needs_human_validation: resolution.needsHumanValidation,
+            target_origin: origin,
+            endpoint: "/envolvido/processos"
+          },
           responsePayload: {},
           status: "failed",
           errorMessage: error instanceof Error ? error.message : "Falha desconhecida ao consultar o Escavador."
@@ -787,7 +855,7 @@ export async function requestAuthorExternalSearches(caseId: string, profile: Pro
     skipped,
     unresolved,
     resolutions: identified.resolutions,
-    processesFound: 0
+    processesFound
   };
 }
 
@@ -804,9 +872,9 @@ export async function refreshAuthorExternalSearches(caseId: string) {
     throw new Error("Nao foi possivel carregar as consultas externas deste caso.");
   }
 
-  const pendingSearches = (searches ?? []).filter((item) => item.status === "pending" && item.provider_result_url);
+  const persistedSearches = searches ?? [];
 
-  if (pendingSearches.length === 0) {
+  if (persistedSearches.length === 0) {
     return {
       refreshed: 0,
       completed: 0,
@@ -820,44 +888,27 @@ export async function refreshAuthorExternalSearches(caseId: string) {
   let notFound = 0;
   let processesFound = 0;
 
-  for (const search of pendingSearches) {
+  for (const search of persistedSearches) {
     try {
-      const response = await fetchEscavadorAsyncResult(String(search.provider_result_url));
-      const normalizedStatus = normalizeEscavadorStatus(response.status);
-      const responseRecord = objectRecord(response) ?? {};
-      const extractedProcesses =
-        normalizedStatus === "completed"
-          ? extractProcessEntriesFromAsyncResponse(responseRecord, search.tribunal)
-          : [];
-      const finalStatus =
-        normalizedStatus === "completed" && extractedProcesses.length === 0 ? "not_found" : normalizedStatus;
-
-      const updatedSearch = await upsertSearchRecord({
+      const result = await executeV2Search({
         existing: search,
         caseId: search.case_id,
         officeId: search.office_id,
         requestedBy: search.requested_by,
         partyId: search.party_id,
+        authorName: String(search.request_payload.author_name ?? ""),
         cpf: search.cpf,
         tribunal: search.tribunal,
-        requestPayload: search.request_payload,
-        responsePayload: responseRecord,
-        status: finalStatus,
-        errorMessage: response.motivo_erro ?? null
+        cpfSource: String(search.request_payload.cpf_source ?? "unknown"),
+        cpfReasoning: String(search.request_payload.cpf_reasoning ?? ""),
+        needsHumanValidation: Boolean(search.request_payload.needs_human_validation)
       });
 
-      if (finalStatus === "completed" || finalStatus === "not_found") {
-        const persisted = await replaceSearchProcesses({
-          search: updatedSearch,
-          processes: extractedProcesses
-        });
-
-        if (finalStatus === "completed") {
-          completed += 1;
-          processesFound += persisted.length;
-        } else {
-          notFound += 1;
-        }
+      if (result.status === "completed") {
+        completed += 1;
+        processesFound += result.processesFound;
+      } else if (result.status === "not_found") {
+        notFound += 1;
       }
 
       refreshed += 1;
@@ -873,7 +924,7 @@ export async function refreshAuthorExternalSearches(caseId: string) {
         requestPayload: search.request_payload,
         responsePayload: objectRecord(search.raw_response) ?? {},
         status: "failed",
-        errorMessage: error instanceof Error ? error.message : "Falha desconhecida ao consultar o resultado do Escavador."
+        errorMessage: error instanceof Error ? error.message : "Falha desconhecida ao atualizar a consulta do Escavador."
       });
       refreshed += 1;
     }

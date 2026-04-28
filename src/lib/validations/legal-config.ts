@@ -12,6 +12,8 @@ const workflowStepKeys = [
   "relatorio"
 ] as const;
 
+const promptAnalysisTypes = ["pre_analysis", "defense_conformity"] as const;
+
 export const portfolioDocumentRequirementSchema = z.object({
   portfolio_id: z.string().uuid("Selecione a carteira."),
   taxonomy_id: z.string().uuid().optional().nullable(),
@@ -42,6 +44,21 @@ export const portfolioCaseTemplateSchema = z.object({
   is_active: z.boolean().default(true)
 });
 
+export const portfolioPromptProfileSchema = z.object({
+  portfolio_id: z.string().uuid("Selecione a carteira."),
+  taxonomy_id: z.string().uuid().optional().nullable(),
+  analysis_type: z.enum(promptAnalysisTypes),
+  profile_name: z.string().trim().min(3, "Informe o nome do perfil.").max(120, "Use ate 120 caracteres."),
+  instruction_priority: z.string().trim().max(1500, "Use ate 1500 caracteres.").optional().transform((value) => value || null),
+  must_check_items: z.string().trim().max(2000, "Use ate 2000 caracteres.").optional().transform((value) => value || null),
+  forbidden_assumptions: z.string().trim().max(1500, "Use ate 1500 caracteres.").optional().transform((value) => value || null),
+  preferred_reasoning_style: z.string().trim().max(1000, "Use ate 1000 caracteres.").optional().transform((value) => value || null),
+  output_emphasis: z.string().trim().max(1500, "Use ate 1500 caracteres.").optional().transform((value) => value || null),
+  additional_instructions: z.string().trim().max(2000, "Use ate 2000 caracteres.").optional().transform((value) => value || null),
+  is_active: z.boolean().default(true)
+});
+
 export type PortfolioDocumentRequirementInput = z.infer<typeof portfolioDocumentRequirementSchema>;
 export type PortfolioLegalThesisInput = z.infer<typeof portfolioLegalThesisSchema>;
 export type PortfolioCaseTemplateInput = z.infer<typeof portfolioCaseTemplateSchema>;
+export type PortfolioPromptProfileInput = z.infer<typeof portfolioPromptProfileSchema>;

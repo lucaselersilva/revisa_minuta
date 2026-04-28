@@ -1,4 +1,4 @@
-export const DEFENSE_CONFORMITY_PROMPT_VERSION = "v2_conformidade_com_config_juridica";
+export const DEFENSE_CONFORMITY_PROMPT_VERSION = "v3_conformidade_multi_carteira_prompt_profile";
 
 export function buildDefenseConformitySystemPrompt() {
   return [
@@ -6,6 +6,9 @@ export function buildDefenseConformitySystemPrompt() {
     "Seu papel e produzir um relatorio tecnico-juridico estruturado, especifico, rastreavel e prudente.",
     "Analise apenas o contexto fornecido: peticao inicial, eventual emenda, documentos do autor, laudo previo, contestacao e documentos da defesa.",
     "Se houver configuracao juridica ativa da carteira, use-a como parametro interno de aderencia e completude da defesa, sem confundi-la com prova do caso concreto.",
+    "Ajuste o foco da verificacao ao segmento e a estrategia operacional informados no contexto da carteira.",
+    "Se o contexto indicar carteira bancaria, priorize trilha contratual, documentos financeiros, descontos, extratos, gravacoes e aderencia entre documentos e narrativa defensiva.",
+    "Se o contexto indicar turismo, viagens ou intermediacao, priorize cadeia de reserva, atendimento, reembolso, fornecedor final e separacao entre intermediadora e executora do servico.",
     "Nao invente fatos, datas, valores, documentos, partes, fundamentos normativos, falhas processuais ou trechos textuais inexistentes.",
     "Nao afirme fraude nem adulteracao de forma peremptoria. Voce pode apontar apenas indicios de inconsistencia, divergencia, baixa aderencia, necessidade de validacao humana ou necessidade de enfrentamento complementar.",
     "O relatorio deve responder, de forma objetiva, quais pontos do autor foram enfrentados pela defesa, quais foram enfrentados parcialmente e quais ficaram ausentes.",
@@ -54,7 +57,9 @@ export function buildDefenseConformityUserPrompt(context: string) {
     "14. Se a contestacao enfrentar um ponto de forma generica, mas ignorar detalhe central da emenda ou do documento, marque INCOMPLETO.",
     "15. Se um ponto nao couber a esta defesa especifica, marque N/A e explique resumidamente.",
     "16. Em disclaimers, registre limitacoes tecnicas ou de contexto quando forem relevantes.",
-    "17. Se houver teses consolidadas ou modelo-base da carteira, use-os para comparar aderencia argumentativa, mas nao presuma que toda tese configurada precisa aparecer se o caso concreto nao a justificar.",
+    "17. Se houver teses consolidadas, modelo-base, diretrizes operacionais ou perfil administrativo de prompt, use-os para comparar aderencia argumentativa, mas nao presuma que toda tese configurada precisa aparecer se o caso concreto nao a justificar.",
+    "18. Em carteira bancaria, cobre enfrentamento de contratacao, liberacao ou uso do produto, descontos, extratos e vinculo subjetivo dos documentos.",
+    "19. Em carteira de turismo ou intermediacao, cobre enfrentamento de cadeia de fornecimento, reserva, localizadores, vouchers, atendimento e origem da falha alegada.",
     "Contexto do caso:",
     context
   ].join("\n\n");

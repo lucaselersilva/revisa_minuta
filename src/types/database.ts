@@ -28,6 +28,7 @@ export type WorkflowStepStatus = "locked" | "available" | "in_progress" | "compl
 export type DocumentIngestionStatus = "pending" | "processing" | "processed" | "failed" | "unsupported" | "empty_text";
 export type PreAnalysisReportStatus = "draft" | "completed" | "failed";
 export type AuthorExternalSearchStatus = "pending" | "completed" | "failed" | "not_found";
+export type PromptAnalysisType = "pre_analysis" | "defense_conformity";
 
 export type Office = {
   id: string;
@@ -229,6 +230,24 @@ export type PortfolioCaseTemplate = {
   title: string;
   template_markdown: string;
   usage_notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PortfolioPromptProfile = {
+  id: string;
+  office_id: string;
+  portfolio_id: string;
+  taxonomy_id: string | null;
+  analysis_type: PromptAnalysisType;
+  profile_name: string;
+  instruction_priority: string | null;
+  must_check_items: string | null;
+  forbidden_assumptions: string | null;
+  preferred_reasoning_style: string | null;
+  output_emphasis: string | null;
+  additional_instructions: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

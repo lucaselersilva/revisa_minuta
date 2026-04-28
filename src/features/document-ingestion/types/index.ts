@@ -106,6 +106,7 @@ export type PreAnalysisContext = {
   caseId: string;
   inputSummary: Record<string, unknown>;
   promptContext: string;
+  configurationTrace: Record<string, unknown>;
   metrics: {
     eligibleCount: number;
     processedCount: number;

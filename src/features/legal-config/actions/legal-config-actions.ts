@@ -8,9 +8,11 @@ import {
   portfolioCaseTemplateSchema,
   portfolioDocumentRequirementSchema,
   portfolioLegalThesisSchema,
+  portfolioPromptProfileSchema,
   type PortfolioCaseTemplateInput,
   type PortfolioDocumentRequirementInput,
-  type PortfolioLegalThesisInput
+  type PortfolioLegalThesisInput,
+  type PortfolioPromptProfileInput
 } from "@/lib/validations/legal-config";
 import { writeAuditLog } from "@/services/audit-log-service";
 
@@ -235,4 +237,75 @@ export async function updateCaseTemplateAction(id: string, input: PortfolioCaseT
 
   revalidateLegalConfigPaths();
   return { ok: true, message: "Modelo-base atualizado." };
+}
+
+export async function createPromptProfileAction(input: PortfolioPromptProfileInput): Promise<ActionResult> {
+  const profile = await requireAdminProfile();
+  if (!profile?.office_id) {
+    return { ok: false, message: "Acesso restrito a administradores." };
+  }
+
+  const parsed = portfolioPromptProfileSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.errors[0]?.message ?? "Dados invalidos." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("AA_portfolio_prompt_profiles")
+    .insert({
+      office_id: profile.office_id,
+      ...parsed.data
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) {
+    return { ok: false, message: "Nao foi possivel criar o perfil de prompt." };
+  }
+
+  await writeAuditLog({
+    profile,
+    action: "legal_config.prompt_profile.created",
+    entityType: "AA_portfolio_prompt_profiles",
+    entityId: data.id,
+    metadata: parsed.data
+  });
+
+  revalidateLegalConfigPaths();
+  return { ok: true, message: "Perfil de prompt criado." };
+}
+
+export async function updatePromptProfileAction(id: string, input: PortfolioPromptProfileInput): Promise<ActionResult> {
+  const profile = await requireAdminProfile();
+  if (!profile?.office_id) {
+    return { ok: false, message: "Acesso restrito a administradores." };
+  }
+
+  const parsed = portfolioPromptProfileSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.errors[0]?.message ?? "Dados invalidos." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("AA_portfolio_prompt_profiles")
+    .update(parsed.data)
+    .eq("id", id)
+    .eq("office_id", profile.office_id);
+
+  if (error) {
+    return { ok: false, message: "Nao foi possivel atualizar o perfil de prompt." };
+  }
+
+  await writeAuditLog({
+    profile,
+    action: "legal_config.prompt_profile.updated",
+    entityType: "AA_portfolio_prompt_profiles",
+    entityId: id,
+    metadata: parsed.data
+  });
+
+  revalidateLegalConfigPaths();
+  return { ok: true, message: "Perfil de prompt atualizado." };
 }

@@ -33,6 +33,7 @@ export default async function LegalConfigPage() {
         requirements={legalConfig.requirements}
         theses={legalConfig.theses}
         templates={legalConfig.templates}
+        promptProfiles={legalConfig.promptProfiles}
       />
     </PageShell>
   );

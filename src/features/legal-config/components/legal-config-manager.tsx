@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Edit, FileText, Gavel, ListChecks, Loader2, Plus } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import { type ReactNode, useMemo, useState, useTransition } from "react";
 import { type FieldPath, type FieldValues, type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -28,17 +28,21 @@ import {
   createCaseTemplateAction,
   createDocumentRequirementAction,
   createLegalThesisAction,
+  createPromptProfileAction,
   updateCaseTemplateAction,
   updateDocumentRequirementAction,
-  updateLegalThesisAction
+  updateLegalThesisAction,
+  updatePromptProfileAction
 } from "@/features/legal-config/actions/legal-config-actions";
 import {
   portfolioCaseTemplateSchema,
   portfolioDocumentRequirementSchema,
   portfolioLegalThesisSchema,
+  portfolioPromptProfileSchema,
   type PortfolioCaseTemplateInput,
   type PortfolioDocumentRequirementInput,
-  type PortfolioLegalThesisInput
+  type PortfolioLegalThesisInput,
+  type PortfolioPromptProfileInput
 } from "@/lib/validations/legal-config";
 import { caseDocumentTypes } from "@/lib/validations/cases";
 import type {
@@ -46,6 +50,8 @@ import type {
   PortfolioCaseTemplate,
   PortfolioDocumentRequirement,
   PortfolioLegalThesis,
+  PortfolioPromptProfile,
+  PromptAnalysisType,
   Taxonomy,
   WorkflowStepKey
 } from "@/types/database";
@@ -53,23 +59,23 @@ import type {
 const stepLabels: Record<WorkflowStepKey, string> = {
   cadastro_inicial: "Cadastro inicial",
   documentos_autor: "Documentos do autor",
-  emenda_inicial: "Emenda à inicial",
-  pre_analise: "Pré-análise",
+  emenda_inicial: "Emenda inicial",
+  pre_analise: "Pre-analise",
   defesa: "Defesa",
-  revisao_final: "Revisão final",
-  relatorio: "Relatório"
+  revisao_final: "Revisao final",
+  relatorio: "Relatorio"
 };
 
 const documentTypeLabels: Record<string, string> = {
-  initial_petition: "Petição inicial",
+  initial_petition: "Peticao inicial",
   author_documents: "Documentos do autor",
   author_identity_document: "Documento de identidade do autor",
-  author_address_proof: "Comprovante de endereço do autor",
+  author_address_proof: "Comprovante de endereco do autor",
   author_payment_proof: "Comprovante de pagamento",
   author_screen_capture: "Prints e capturas de tela",
-  initial_amendment: "Emenda à inicial",
+  initial_amendment: "Emenda inicial",
   initial_amendment_documents: "Documentos da emenda",
-  defense: "Contestação",
+  defense: "Contestacao",
   defense_documents: "Documentos da defesa",
   other: "Outros"
 };
@@ -84,12 +90,18 @@ const workflowStepKeys: WorkflowStepKey[] = [
   "relatorio"
 ];
 
+const promptAnalysisTypeLabels: Record<PromptAnalysisType, string> = {
+  pre_analysis: "Pre-analise",
+  defense_conformity: "Conformidade da defesa"
+};
+
 type Props = {
   portfolios: Portfolio[];
   taxonomies: Taxonomy[];
   requirements: PortfolioDocumentRequirement[];
   theses: PortfolioLegalThesis[];
   templates: PortfolioCaseTemplate[];
+  promptProfiles: PortfolioPromptProfile[];
 };
 
 type PortfolioScopedFormValues = FieldValues & {
@@ -98,14 +110,16 @@ type PortfolioScopedFormValues = FieldValues & {
   is_active: boolean;
 };
 
-export function LegalConfigManager({ portfolios, taxonomies, requirements, theses, templates }: Props) {
+export function LegalConfigManager({ portfolios, taxonomies, requirements, theses, templates, promptProfiles }: Props) {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>(portfolios[0]?.id ?? "");
   const [editingRequirement, setEditingRequirement] = useState<PortfolioDocumentRequirement | null>(null);
   const [editingThesis, setEditingThesis] = useState<PortfolioLegalThesis | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<PortfolioCaseTemplate | null>(null);
+  const [editingPromptProfile, setEditingPromptProfile] = useState<PortfolioPromptProfile | null>(null);
   const [requirementOpen, setRequirementOpen] = useState(false);
   const [thesisOpen, setThesisOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [promptProfileOpen, setPromptProfileOpen] = useState(false);
 
   const selectedTaxonomies = useMemo(
     () => taxonomies.filter((taxonomy) => taxonomy.portfolio_id === selectedPortfolioId),
@@ -123,14 +137,18 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
     () => templates.filter((item) => item.portfolio_id === selectedPortfolioId),
     [selectedPortfolioId, templates]
   );
+  const selectedPromptProfiles = useMemo(
+    () => promptProfiles.filter((item) => item.portfolio_id === selectedPortfolioId),
+    [promptProfiles, selectedPortfolioId]
+  );
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Escopo jurídico por carteira</CardTitle>
+          <CardTitle>Escopo juridico por carteira</CardTitle>
           <CardDescription>
-            Configure documentos obrigatórios, teses consolidadas e modelos-base que orientam a operação e o workflow de cada carteira.
+            Configure documentos obrigatorios, teses, perfis de prompt e modelos-base que orientam cada carteira.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
@@ -150,7 +168,7 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
             </Select>
           </div>
           <div className="rounded-lg border bg-muted/30 p-4">
-            <p className="text-sm font-medium">Taxonomias disponíveis nesta carteira</p>
+            <p className="text-sm font-medium">Taxonomias disponiveis nesta carteira</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {selectedTaxonomies.length > 0 ? (
                 selectedTaxonomies.map((taxonomy) => (
@@ -168,8 +186,8 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
 
       <SectionCard
         icon={ListChecks}
-        title="Documentos obrigatórios"
-        description="Requisitos documentais que podem variar por carteira e, se necessário, por taxonomia."
+        title="Documentos obrigatorios"
+        description="Requisitos documentais que podem variar por carteira e por taxonomia."
         onCreate={() => {
           setEditingRequirement(null);
           setRequirementOpen(true);
@@ -181,7 +199,6 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
             <span />
           </DialogTrigger>
           <DocumentRequirementForm
-            open={requirementOpen}
             requirement={editingRequirement}
             portfolios={portfolios}
             taxonomies={taxonomies}
@@ -197,7 +214,7 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
               <TableHead>Taxonomia</TableHead>
               <TableHead>Regra</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-24 text-right">Ações</TableHead>
+              <TableHead className="w-24 text-right">Acoes</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -212,7 +229,14 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
-                    <Button variant="outline" size="icon" onClick={() => { setEditingRequirement(item); setRequirementOpen(true); }}>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setEditingRequirement(item);
+                        setRequirementOpen(true);
+                      }}
+                    >
                       <Edit className="h-4 w-4" />
                     </Button>
                   </div>
@@ -222,7 +246,11 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
             {selectedRequirements.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="p-6">
-                  <EmptyState icon={ListChecks} title="Nenhum requisito configurado" description="Cadastre os documentos obrigatórios iniciais desta carteira." />
+                  <EmptyState
+                    icon={ListChecks}
+                    title="Nenhum requisito configurado"
+                    description="Cadastre os documentos obrigatorios iniciais desta carteira."
+                  />
                 </TableCell>
               </TableRow>
             ) : null}
@@ -233,7 +261,7 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
       <SectionCard
         icon={Gavel}
         title="Teses consolidadas"
-        description="Bloco de teses e fundamentos que orientam a revisão e a construção da defesa por carteira."
+        description="Teses e fundamentos que orientam a leitura defensiva da carteira."
         onCreate={() => {
           setEditingThesis(null);
           setThesisOpen(true);
@@ -255,11 +283,11 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Título</TableHead>
+              <TableHead>Titulo</TableHead>
               <TableHead>Taxonomia</TableHead>
               <TableHead>Resumo</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-24 text-right">Ações</TableHead>
+              <TableHead className="w-24 text-right">Acoes</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -273,7 +301,14 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
-                    <Button variant="outline" size="icon" onClick={() => { setEditingThesis(item); setThesisOpen(true); }}>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setEditingThesis(item);
+                        setThesisOpen(true);
+                      }}
+                    >
                       <Edit className="h-4 w-4" />
                     </Button>
                   </div>
@@ -283,7 +318,83 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
             {selectedTheses.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="p-6">
-                  <EmptyState icon={Gavel} title="Nenhuma tese cadastrada" description="Cadastre as teses gerais e específicas da carteira." />
+                  <EmptyState icon={Gavel} title="Nenhuma tese cadastrada" description="Cadastre as teses gerais e especificas da carteira." />
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </SectionCard>
+
+      <SectionCard
+        icon={Edit}
+        title="Perfis de prompt"
+        description="Refino administrativo controlado da analise por carteira, taxonomia e tipo de geracao."
+        onCreate={() => {
+          setEditingPromptProfile(null);
+          setPromptProfileOpen(true);
+        }}
+        createLabel="Novo perfil"
+      >
+        <Dialog open={promptProfileOpen} onOpenChange={setPromptProfileOpen}>
+          <DialogTrigger asChild>
+            <span />
+          </DialogTrigger>
+          <PromptProfileForm
+            promptProfile={editingPromptProfile}
+            portfolios={portfolios}
+            taxonomies={taxonomies}
+            initialPortfolioId={selectedPortfolioId}
+            onClose={() => setPromptProfileOpen(false)}
+          />
+        </Dialog>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Escopo</TableHead>
+              <TableHead>Analise</TableHead>
+              <TableHead>Perfil</TableHead>
+              <TableHead>Resumo</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-24 text-right">Acoes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {selectedPromptProfiles.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{taxonomies.find((taxonomy) => taxonomy.id === item.taxonomy_id)?.code ?? "Geral"}</TableCell>
+                <TableCell>{promptAnalysisTypeLabels[item.analysis_type]}</TableCell>
+                <TableCell className="font-medium">{item.profile_name}</TableCell>
+                <TableCell className="max-w-md text-muted-foreground">
+                  {item.instruction_priority ?? item.must_check_items ?? item.output_emphasis ?? "Sem resumo"}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={item.is_active ? "success" : "secondary"}>{item.is_active ? "Ativo" : "Inativo"}</Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setEditingPromptProfile(item);
+                        setPromptProfileOpen(true);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {selectedPromptProfiles.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="p-6">
+                  <EmptyState
+                    icon={Edit}
+                    title="Nenhum perfil de prompt cadastrado"
+                    description="Cadastre prioridades, checks e restricoes de analise por carteira."
+                  />
                 </TableCell>
               </TableRow>
             ) : null}
@@ -293,8 +404,8 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
 
       <SectionCard
         icon={FileText}
-        title="Modelos-base de contestação"
-        description="Modelo de referência por taxonomia para orientar a conferência da peça e a futura IA jurídica."
+        title="Modelos-base de contestacao"
+        description="Modelo de referencia por taxonomia para orientar a conferencia da peca e a IA juridica."
         onCreate={() => {
           setEditingTemplate(null);
           setTemplateOpen(true);
@@ -317,10 +428,10 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
           <TableHeader>
             <TableRow>
               <TableHead>Taxonomia</TableHead>
-              <TableHead>Título</TableHead>
-              <TableHead>Observações</TableHead>
+              <TableHead>Titulo</TableHead>
+              <TableHead>Observacoes</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-24 text-right">Ações</TableHead>
+              <TableHead className="w-24 text-right">Acoes</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -328,13 +439,20 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
               <TableRow key={item.id}>
                 <TableCell>{taxonomies.find((taxonomy) => taxonomy.id === item.taxonomy_id)?.code ?? "Sem taxonomia"}</TableCell>
                 <TableCell className="font-medium">{item.title}</TableCell>
-                <TableCell className="max-w-md text-muted-foreground">{item.usage_notes ?? "Sem observações"}</TableCell>
+                <TableCell className="max-w-md text-muted-foreground">{item.usage_notes ?? "Sem observacoes"}</TableCell>
                 <TableCell>
                   <Badge variant={item.is_active ? "success" : "secondary"}>{item.is_active ? "Ativo" : "Inativo"}</Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
-                    <Button variant="outline" size="icon" onClick={() => { setEditingTemplate(item); setTemplateOpen(true); }}>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setEditingTemplate(item);
+                        setTemplateOpen(true);
+                      }}
+                    >
                       <Edit className="h-4 w-4" />
                     </Button>
                   </div>
@@ -344,7 +462,7 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
             {selectedTemplates.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="p-6">
-                  <EmptyState icon={FileText} title="Nenhum modelo-base cadastrado" description="Cadastre os modelos-base por taxonomia para dar suporte à operação." />
+                  <EmptyState icon={FileText} title="Nenhum modelo-base cadastrado" description="Cadastre os modelos-base por taxonomia." />
                 </TableCell>
               </TableRow>
             ) : null}
@@ -368,7 +486,7 @@ function SectionCard({
   description: string;
   createLabel: string;
   onCreate: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Card>
@@ -397,7 +515,6 @@ function DocumentRequirementForm({
   initialPortfolioId,
   onClose
 }: {
-  open: boolean;
   requirement: PortfolioDocumentRequirement | null;
   portfolios: Portfolio[];
   taxonomies: Taxonomy[];
@@ -425,6 +542,7 @@ function DocumentRequirementForm({
       const result = requirement
         ? await updateDocumentRequirementAction(requirement.id, values)
         : await createDocumentRequirementAction(values);
+
       if (result.ok) {
         toast.success(result.message);
         onClose();
@@ -438,31 +556,49 @@ function DocumentRequirementForm({
     <DialogContent>
       <DialogHeader>
         <DialogTitle>{requirement ? "Editar requisito documental" : "Novo requisito documental"}</DialogTitle>
-        <DialogDescription>Configure quais documentos são exigidos nesta carteira e etapa do fluxo.</DialogDescription>
+        <DialogDescription>Configure quais documentos sao exigidos nesta carteira e etapa do fluxo.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
         <PortfolioAndTaxonomyFields form={form} portfolios={portfolios} taxonomies={filteredTaxonomies} taxonomyOptional />
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Etapa</Label>
-            <Select value={form.watch("step_key")} onValueChange={(value) => form.setValue("step_key", value as WorkflowStepKey, { shouldDirty: true })}>
+            <Select
+              value={form.watch("step_key")}
+              onValueChange={(value) => form.setValue("step_key", value as WorkflowStepKey, { shouldDirty: true })}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {workflowStepKeys.map((step) => <SelectItem key={step} value={step}>{stepLabels[step]}</SelectItem>)}
+                {workflowStepKeys.map((step) => (
+                  <SelectItem key={step} value={step}>
+                    {stepLabels[step]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
             <Label>Documento</Label>
-            <Select value={form.watch("document_type")} onValueChange={(value) => form.setValue("document_type", value as PortfolioDocumentRequirementInput["document_type"], { shouldDirty: true })}>
+            <Select
+              value={form.watch("document_type")}
+              onValueChange={(value) =>
+                form.setValue("document_type", value as PortfolioDocumentRequirementInput["document_type"], {
+                  shouldDirty: true
+                })
+              }
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {caseDocumentTypes.map((type) => <SelectItem key={type} value={type}>{documentTypeLabels[type]}</SelectItem>)}
+                {caseDocumentTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {documentTypeLabels[type]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
-        <FieldText form={form} name="requirement_label" label="Nome do requisito" placeholder="Ex.: Petição inicial obrigatória" />
+        <FieldText form={form} name="requirement_label" label="Nome do requisito" placeholder="Ex.: Peticao inicial obrigatoria" />
         <FieldTextarea form={form} name="requirement_details" label="Detalhes" placeholder="Explique em que contexto esse documento deve estar presente." />
         <ActiveToggle form={form} />
         <DialogFooter>
@@ -505,6 +641,7 @@ function LegalThesisForm({
   function onSubmit(values: PortfolioLegalThesisInput) {
     startTransition(async () => {
       const result = thesis ? await updateLegalThesisAction(thesis.id, values) : await createLegalThesisAction(values);
+
       if (result.ok) {
         toast.success(result.message);
         onClose();
@@ -518,14 +655,104 @@ function LegalThesisForm({
     <DialogContent>
       <DialogHeader>
         <DialogTitle>{thesis ? "Editar tese" : "Nova tese"}</DialogTitle>
-        <DialogDescription>Registre teses gerais da carteira e teses específicas por taxonomia quando necessário.</DialogDescription>
+        <DialogDescription>Registre teses gerais da carteira e teses especificas por taxonomia quando necessario.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
         <PortfolioAndTaxonomyFields form={form} portfolios={portfolios} taxonomies={filteredTaxonomies} taxonomyOptional />
-        <FieldText form={form} name="title" label="Título" placeholder="Ex.: Ilegitimidade passiva da intermediadora" />
-        <FieldTextarea form={form} name="summary" label="Resumo" placeholder="Síntese objetiva de quando e por que a tese deve ser considerada." />
-        <FieldTextarea form={form} name="legal_basis" label="Base legal" placeholder="Jurisprudência, artigos e marcos regulatórios relevantes." />
-        <FieldTextarea form={form} name="applicability_notes" label="Observações de aplicabilidade" placeholder="Cuidados práticos, limitações e sinais documentais." />
+        <FieldText form={form} name="title" label="Titulo" placeholder="Ex.: Ilegitimidade passiva da intermediadora" />
+        <FieldTextarea form={form} name="summary" label="Resumo" placeholder="Sintese objetiva de quando e por que a tese deve ser considerada." />
+        <FieldTextarea form={form} name="legal_basis" label="Base legal" placeholder="Jurisprudencia, artigos e marcos regulatorios relevantes." />
+        <FieldTextarea form={form} name="applicability_notes" label="Observacoes de aplicabilidade" placeholder="Cuidados praticos, limitacoes e sinais documentais." />
+        <ActiveToggle form={form} />
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={isPending}>{isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Salvar</Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+function PromptProfileForm({
+  promptProfile,
+  portfolios,
+  taxonomies,
+  initialPortfolioId,
+  onClose
+}: {
+  promptProfile: PortfolioPromptProfile | null;
+  portfolios: Portfolio[];
+  taxonomies: Taxonomy[];
+  initialPortfolioId: string;
+  onClose: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const form = useForm<PortfolioPromptProfileInput>({
+    resolver: zodResolver(portfolioPromptProfileSchema),
+    values: {
+      portfolio_id: promptProfile?.portfolio_id ?? initialPortfolioId,
+      taxonomy_id: promptProfile?.taxonomy_id ?? null,
+      analysis_type: promptProfile?.analysis_type ?? "pre_analysis",
+      profile_name: promptProfile?.profile_name ?? "",
+      instruction_priority: promptProfile?.instruction_priority ?? "",
+      must_check_items: promptProfile?.must_check_items ?? "",
+      forbidden_assumptions: promptProfile?.forbidden_assumptions ?? "",
+      preferred_reasoning_style: promptProfile?.preferred_reasoning_style ?? "",
+      output_emphasis: promptProfile?.output_emphasis ?? "",
+      additional_instructions: promptProfile?.additional_instructions ?? "",
+      is_active: promptProfile?.is_active ?? true
+    }
+  });
+  const filteredTaxonomies = taxonomies.filter((taxonomy) => taxonomy.portfolio_id === form.watch("portfolio_id"));
+
+  function onSubmit(values: PortfolioPromptProfileInput) {
+    startTransition(async () => {
+      const result = promptProfile
+        ? await updatePromptProfileAction(promptProfile.id, values)
+        : await createPromptProfileAction(values);
+
+      if (result.ok) {
+        toast.success(result.message);
+        onClose();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  return (
+    <DialogContent className="max-w-3xl">
+      <DialogHeader>
+        <DialogTitle>{promptProfile ? "Editar perfil de prompt" : "Novo perfil de prompt"}</DialogTitle>
+        <DialogDescription>Defina prioridades, checks obrigatorios e restricoes controladas para cada tipo de analise.</DialogDescription>
+      </DialogHeader>
+      <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <PortfolioAndTaxonomyFields form={form} portfolios={portfolios} taxonomies={filteredTaxonomies} taxonomyOptional />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Tipo de analise</Label>
+            <Select
+              value={form.watch("analysis_type")}
+              onValueChange={(value) => form.setValue("analysis_type", value as PromptAnalysisType, { shouldDirty: true })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(promptAnalysisTypeLabels).map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <FieldText form={form} name="profile_name" label="Nome do perfil" placeholder="Ex.: Pre-analise BMG - Contratacao contestada" />
+        </div>
+        <FieldTextarea form={form} name="instruction_priority" label="Prioridades de leitura" placeholder="Liste os focos prioritarios desta analise." />
+        <FieldTextarea form={form} name="must_check_items" label="Itens que sempre devem ser verificados" placeholder="Ex.: contrato, extrato, comprovante de compra, reserva, localizador..." />
+        <FieldTextarea form={form} name="forbidden_assumptions" label="Presuncoes vedadas" placeholder="Ex.: nao presumir fraude, nao presumir responsabilidade automatica..." />
+        <FieldTextarea form={form} name="preferred_reasoning_style" label="Estilo de raciocinio preferido" placeholder="Ex.: comparativo, cronologico, focado em rastreabilidade documental." />
+        <FieldTextarea form={form} name="output_emphasis" label="Enfase da saida" placeholder="Ex.: lacunas documentais, coerencia temporal, cadeia contratual, pedidos nao rebatidos." />
+        <FieldTextarea form={form} name="additional_instructions" label="Instrucoes complementares" placeholder="Observacoes adicionais para calibrar a geracao." />
         <ActiveToggle form={form} />
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
@@ -566,6 +793,7 @@ function CaseTemplateForm({
   function onSubmit(values: PortfolioCaseTemplateInput) {
     startTransition(async () => {
       const result = template ? await updateCaseTemplateAction(template.id, values) : await createCaseTemplateAction(values);
+
       if (result.ok) {
         toast.success(result.message);
         onClose();
@@ -579,13 +807,13 @@ function CaseTemplateForm({
     <DialogContent className="max-w-3xl">
       <DialogHeader>
         <DialogTitle>{template ? "Editar modelo-base" : "Novo modelo-base"}</DialogTitle>
-        <DialogDescription>Use texto aprovado pela operação jurídica para orientar a revisão das contestações.</DialogDescription>
+        <DialogDescription>Use texto aprovado pela operacao juridica para orientar a revisao das contestacoes.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
         <PortfolioAndTaxonomyFields form={form} portfolios={portfolios} taxonomies={filteredTaxonomies} />
-        <FieldText form={form} name="title" label="Título" placeholder="Ex.: Modelo base - A1" />
-        <FieldTextarea form={form} name="template_markdown" label="Conteúdo do modelo" placeholder="Estruture aqui o modelo-base em markdown." rows={14} />
-        <FieldTextarea form={form} name="usage_notes" label="Observações" placeholder="Notas de uso, cautelas e limites do modelo." />
+        <FieldText form={form} name="title" label="Titulo" placeholder="Ex.: Modelo base - A1" />
+        <FieldTextarea form={form} name="template_markdown" label="Conteudo do modelo" placeholder="Estruture aqui o modelo-base em markdown." rows={14} />
+        <FieldTextarea form={form} name="usage_notes" label="Observacoes" placeholder="Notas de uso, cautelas e limites do modelo." />
         <ActiveToggle form={form} />
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
@@ -623,7 +851,11 @@ function PortfolioAndTaxonomyFields<TFormValues extends PortfolioScopedFormValue
         >
           <SelectTrigger><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
           <SelectContent>
-            {portfolios.map((portfolio) => <SelectItem key={portfolio.id} value={portfolio.id}>{portfolio.name}</SelectItem>)}
+            {portfolios.map((portfolio) => (
+              <SelectItem key={portfolio.id} value={portfolio.id}>
+                {portfolio.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -632,13 +864,19 @@ function PortfolioAndTaxonomyFields<TFormValues extends PortfolioScopedFormValue
         <Select
           value={String(form.watch(taxonomyField) ?? (taxonomyOptional ? "all" : ""))}
           onValueChange={(value) =>
-            form.setValue(taxonomyField, (value === "all" ? null : value) as TFormValues[FieldPath<TFormValues>], { shouldDirty: true })
+            form.setValue(taxonomyField, (value === "all" ? null : value) as TFormValues[FieldPath<TFormValues>], {
+              shouldDirty: true
+            })
           }
         >
           <SelectTrigger><SelectValue placeholder={taxonomyOptional ? "Todas as taxonomias" : "Selecione a taxonomia"} /></SelectTrigger>
           <SelectContent>
             {taxonomyOptional ? <SelectItem value="all">Geral da carteira</SelectItem> : null}
-            {taxonomies.map((taxonomy) => <SelectItem key={taxonomy.id} value={taxonomy.id}>{taxonomy.code} - {taxonomy.name}</SelectItem>)}
+            {taxonomies.map((taxonomy) => (
+              <SelectItem key={taxonomy.id} value={taxonomy.id}>
+                {taxonomy.code} - {taxonomy.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

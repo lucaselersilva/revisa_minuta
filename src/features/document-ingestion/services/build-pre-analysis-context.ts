@@ -1,7 +1,8 @@
 import { extractStructuredDocumentAnalysis } from "@/features/document-ingestion/lib/document-analysis-helpers";
 import { getCaseById } from "@/features/cases/queries/get-cases";
 import { isPreAnalysisEligibleDocumentType } from "@/features/document-ingestion/lib/eligible-documents";
-import { getActiveLegalConfigurationForPortfolio } from "@/features/legal-config/queries/get-legal-config";
+import { buildPromptProfileContextLines, buildPromptTrace, getPortfolioStaticGuidance } from "@/features/legal-config/lib/prompt-guidance";
+import { getActiveLegalConfigurationForPortfolio, resolvePromptProfile } from "@/features/legal-config/queries/get-legal-config";
 import type { PreAnalysisContext } from "@/features/document-ingestion/types";
 import { createClient } from "@/lib/supabase/server";
 import type { DocumentIngestion } from "@/types/database";
@@ -125,6 +126,20 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
   );
   const relevantTemplates = legalConfig.templates.slice(0, 1);
   const relevantTheses = legalConfig.theses.slice(0, 6);
+  const promptProfile = resolvePromptProfile(legalConfig.promptProfiles, "pre_analysis", caseItem.taxonomy_id);
+  const staticGuidance = getPortfolioStaticGuidance({
+    portfolioSlug: caseItem.portfolio?.slug,
+    portfolioSegment: caseItem.portfolio?.segment,
+    analysisType: "pre_analysis"
+  });
+  const configurationTrace = buildPromptTrace({
+    analysisType: "pre_analysis",
+    staticGuidance,
+    promptProfile,
+    requirements: relevantRequirements,
+    theses: relevantTheses,
+    templateTitles: relevantTemplates.map((item) => ({ id: item.id, title: item.title }))
+  });
   const inputSummary = {
     case_id: caseItem.id,
     case_number: caseItem.case_number,
@@ -143,12 +158,14 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
       requirements_count: relevantRequirements.length,
       theses_count: relevantTheses.length,
       templates_count: relevantTemplates.length
-    }
+    },
+    configuration_trace: configurationTrace
   };
 
   return {
     caseId,
     inputSummary,
+    configurationTrace,
     promptContext: [
       "[Escopo da etapa]",
       "Trata-se de pre-analise com base em documentos da fase inicial.",
@@ -188,6 +205,18 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
             ...relevantTemplates.map((item) => `${item.title}\n${truncateText(item.template_markdown, 4000)}`)
           ]
         : ["Modelo-base de referencia da taxonomia atual: nenhum modelo ativo configurado."]),
+      "",
+      "[Diretivas operacionais da carteira]",
+      `Estratégia base considerada: ${staticGuidance.strategyLabel}.`,
+      "Focos operacionais prioritarios:",
+      ...staticGuidance.focusAreas.map((item) => `- ${item}`),
+      "Cuidados de leitura:",
+      ...staticGuidance.cautionPoints.map((item) => `- ${item}`),
+      "Enfase esperada na saida:",
+      ...staticGuidance.outputEmphasis.map((item) => `- ${item}`),
+      "",
+      "[Refino administrativo de prompt]",
+      ...buildPromptProfileContextLines(promptProfile),
       "",
       "[Analise documental estruturada]",
       ...(documentAnalysisBlocks.length > 0 ? documentAnalysisBlocks : ["Nenhuma analise estruturada disponivel."]),

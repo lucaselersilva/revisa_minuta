@@ -5,7 +5,8 @@ import {
   defenseConformityInitialDocumentTypes
 } from "@/features/document-ingestion/lib/eligible-documents";
 import { getCaseById } from "@/features/cases/queries/get-cases";
-import { getActiveLegalConfigurationForPortfolio } from "@/features/legal-config/queries/get-legal-config";
+import { buildPromptProfileContextLines, buildPromptTrace, getPortfolioStaticGuidance } from "@/features/legal-config/lib/prompt-guidance";
+import { getActiveLegalConfigurationForPortfolio, resolvePromptProfile } from "@/features/legal-config/queries/get-legal-config";
 import { getPreAnalysisSnapshot } from "@/features/document-ingestion/queries/get-pre-analysis-snapshot";
 import { createClient } from "@/lib/supabase/server";
 import type { DocumentIngestion } from "@/types/database";
@@ -25,6 +26,7 @@ export type DefenseConformityContext = {
   caseId: string;
   inputSummary: Record<string, unknown>;
   promptContext: string;
+  configurationTrace: Record<string, unknown>;
   metrics: {
     initialProcessedCount: number;
     defenseProcessedCount: number;
@@ -131,6 +133,20 @@ export async function buildDefenseConformityContext(caseId: string): Promise<Def
   const defenseRequirements = legalConfig.requirements.filter((item) => item.step_key === "defesa" || item.step_key === "revisao_final");
   const activeTemplate = legalConfig.templates[0] ?? null;
   const activeTheses = legalConfig.theses.slice(0, 6);
+  const promptProfile = resolvePromptProfile(legalConfig.promptProfiles, "defense_conformity", caseItem.taxonomy_id);
+  const staticGuidance = getPortfolioStaticGuidance({
+    portfolioSlug: caseItem.portfolio?.slug,
+    portfolioSegment: caseItem.portfolio?.segment,
+    analysisType: "defense_conformity"
+  });
+  const configurationTrace = buildPromptTrace({
+    analysisType: "defense_conformity",
+    staticGuidance,
+    promptProfile,
+    requirements: defenseRequirements,
+    theses: activeTheses,
+    templateTitles: activeTemplate ? [{ id: activeTemplate.id, title: activeTemplate.title }] : []
+  });
   const inputSummary = {
     case_id: caseItem.id,
     case_number: caseItem.case_number,
@@ -147,12 +163,14 @@ export async function buildDefenseConformityContext(caseId: string): Promise<Def
       requirements_count: defenseRequirements.length,
       theses_count: activeTheses.length,
       templates_count: activeTemplate ? 1 : 0
-    }
+    },
+    configuration_trace: configurationTrace
   };
 
   return {
     caseId,
     inputSummary,
+    configurationTrace,
     promptContext: [
       "[Escopo da etapa]",
       "Trata-se de relatorio de conformidade da defesa, apos a juntada da contestacao.",
@@ -194,6 +212,18 @@ export async function buildDefenseConformityContext(caseId: string): Promise<Def
             `${activeTemplate.title}\n${truncateText(activeTemplate.template_markdown, 5000)}`
           ]
         : ["Modelo-base de referencia da taxonomia atual: nenhum modelo ativo configurado."]),
+      "",
+      "[Diretivas operacionais da carteira]",
+      `Estratégia base considerada: ${staticGuidance.strategyLabel}.`,
+      "Focos operacionais prioritarios:",
+      ...staticGuidance.focusAreas.map((item) => `- ${item}`),
+      "Cuidados de leitura:",
+      ...staticGuidance.cautionPoints.map((item) => `- ${item}`),
+      "Enfase esperada na saida:",
+      ...staticGuidance.outputEmphasis.map((item) => `- ${item}`),
+      "",
+      "[Refino administrativo de prompt]",
+      ...buildPromptProfileContextLines(promptProfile),
       "",
       "[Documentos da fase inicial e emenda]",
       ...buildDocumentBlocks(initialProcessed as Array<{ document: (typeof initialProcessed)[number]["document"]; ingestion: NonNullable<(typeof initialProcessed)[number]["ingestion"]> }>),

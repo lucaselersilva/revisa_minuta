@@ -890,6 +890,12 @@ function DefenseWorkspace({
                 Nenhum relatorio de conformidade gerado ainda para esta defesa.
               </p>
             )}
+
+            {savedConformityReport?.input_summary ? (
+              <div className="mt-4">
+                <ConfigurationTraceCard trace={extractConfigurationTrace(savedConformityReport.input_summary)} />
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-lg border bg-white p-5">
@@ -996,6 +1002,100 @@ function DefenseWorkspace({
 function extractStringArray(reportJson: Record<string, unknown> | null, key: string) {
   const value = reportJson?.[key];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function extractConfigurationTrace(inputSummary: Record<string, unknown> | null | undefined) {
+  const trace = inputSummary?.configuration_trace;
+  return trace && typeof trace === "object" && !Array.isArray(trace) ? (trace as Record<string, unknown>) : null;
+}
+
+function extractTraceStrings(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function extractTraceNamedItems(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      return typeof record.title === "string" ? record.title : typeof record.label === "string" ? record.label : null;
+    })
+    .filter((item): item is string => Boolean(item));
+}
+
+function ConfigurationTraceCard({ trace }: { trace: Record<string, unknown> | null }) {
+  if (!trace) {
+    return null;
+  }
+
+  const strategy =
+    trace.portfolio_strategy && typeof trace.portfolio_strategy === "object" && !Array.isArray(trace.portfolio_strategy)
+      ? (trace.portfolio_strategy as Record<string, unknown>)
+      : null;
+  const promptProfile =
+    trace.prompt_profile && typeof trace.prompt_profile === "object" && !Array.isArray(trace.prompt_profile)
+      ? (trace.prompt_profile as Record<string, unknown>)
+      : null;
+  const legalConfiguration =
+    trace.legal_configuration && typeof trace.legal_configuration === "object" && !Array.isArray(trace.legal_configuration)
+      ? (trace.legal_configuration as Record<string, unknown>)
+      : null;
+
+  const columns = [
+    {
+      title: "Estrategia",
+      items: [
+        strategy && typeof strategy.label === "string" ? strategy.label : null,
+        ...extractTraceStrings(strategy?.focus_areas).slice(0, 3)
+      ].filter((item): item is string => Boolean(item))
+    },
+    {
+      title: "Perfil de prompt",
+      items: [
+        promptProfile && typeof promptProfile.profile_name === "string" ? promptProfile.profile_name : null,
+        ...extractTraceStrings(promptProfile?.highlights).slice(0, 4)
+      ].filter((item): item is string => Boolean(item))
+    },
+    {
+      title: "Base juridica",
+      items: [
+        ...extractTraceNamedItems(legalConfiguration?.requirements).slice(0, 3),
+        ...extractTraceNamedItems(legalConfiguration?.theses).slice(0, 3),
+        ...extractTraceNamedItems(legalConfiguration?.templates).slice(0, 2)
+      ]
+    }
+  ];
+
+  return (
+    <div className="rounded-md border bg-muted/25 p-3">
+      <p className="font-medium">Base considerada na geracao</p>
+      <div className="mt-3 grid gap-3 xl:grid-cols-3">
+        {columns.map((column) => (
+          <div key={column.title} className="rounded-md border bg-white p-3">
+            <p className="text-sm font-medium">{column.title}</p>
+            <div className="mt-2 space-y-2">
+              {column.items.length ? (
+                column.items.map((item) => (
+                  <p key={item} className="text-sm text-muted-foreground">
+                    {item}
+                  </p>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhum item rastreado.</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function extractExplorableDefensePoints(reportJson: Record<string, unknown> | null) {

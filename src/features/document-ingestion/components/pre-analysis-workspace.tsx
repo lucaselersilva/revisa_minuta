@@ -288,16 +288,19 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
           </CardHeader>
           <CardContent>
             {selectedReport && selectedReport.status === "completed" ? (
-              <ProfessionalMarkdownReport
-                title={`Laudo previo operacional v${selectedReport.version}`}
-                subtitle="Relatorio interno estruturado para revisao da narrativa inicial, aderencia documental e preparacao defensiva."
-                markdown={selectedReport.report_markdown}
-                exportFileName={`laudo-previo-v${selectedReport.version}`}
-                generatedAt={selectedReport.generated_at ?? selectedReport.created_at}
-                generatedBy={selectedReport.generated_profile?.full_name ?? null}
-                promptVersion={selectedReport.prompt_version}
-                modelName={selectedReport.model_name}
-              />
+              <div className="space-y-4">
+                <ConfigurationTraceCard trace={extractConfigurationTrace(selectedReport.input_summary)} />
+                <ProfessionalMarkdownReport
+                  title={`Laudo previo operacional v${selectedReport.version}`}
+                  subtitle="Relatorio interno estruturado para revisao da narrativa inicial, aderencia documental e preparacao defensiva."
+                  markdown={selectedReport.report_markdown}
+                  exportFileName={`laudo-previo-v${selectedReport.version}`}
+                  generatedAt={selectedReport.generated_at ?? selectedReport.created_at}
+                  generatedBy={selectedReport.generated_profile?.full_name ?? null}
+                  promptVersion={selectedReport.prompt_version}
+                  modelName={selectedReport.model_name}
+                />
+              </div>
             ) : selectedReport?.status === "failed" ? (
               <div className="space-y-4">
                 <EmptyState icon={ShieldAlert} title="Geracao falhou" description="Revise o motivo abaixo e tente gerar uma nova versao do laudo." />
@@ -315,6 +318,93 @@ export function PreAnalysisWorkspace({ caseId, snapshot }: { caseId: string; sna
             )}
           </CardContent>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+function extractConfigurationTrace(inputSummary: Record<string, unknown> | null | undefined) {
+  const trace = inputSummary?.configuration_trace;
+  return trace && typeof trace === "object" && !Array.isArray(trace) ? (trace as Record<string, unknown>) : null;
+}
+
+function extractStringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function extractNamedList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const title = typeof record.title === "string" ? record.title : typeof record.label === "string" ? record.label : null;
+      return title;
+    })
+    .filter((item): item is string => Boolean(item));
+}
+
+function ConfigurationTraceCard({ trace }: { trace: Record<string, unknown> | null }) {
+  if (!trace) {
+    return null;
+  }
+
+  const portfolioStrategy =
+    trace.portfolio_strategy && typeof trace.portfolio_strategy === "object" && !Array.isArray(trace.portfolio_strategy)
+      ? (trace.portfolio_strategy as Record<string, unknown>)
+      : null;
+  const promptProfile =
+    trace.prompt_profile && typeof trace.prompt_profile === "object" && !Array.isArray(trace.prompt_profile)
+      ? (trace.prompt_profile as Record<string, unknown>)
+      : null;
+  const legalConfiguration =
+    trace.legal_configuration && typeof trace.legal_configuration === "object" && !Array.isArray(trace.legal_configuration)
+      ? (trace.legal_configuration as Record<string, unknown>)
+      : null;
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <p className="font-semibold">Base considerada na geracao</p>
+      <div className="mt-3 grid gap-4 xl:grid-cols-3">
+        <TraceBlock
+          title="Estrategia da carteira"
+          items={[
+            portfolioStrategy && typeof portfolioStrategy.label === "string" ? portfolioStrategy.label : null,
+            ...extractStringList(portfolioStrategy?.focus_areas).slice(0, 3)
+          ].filter((item): item is string => Boolean(item))}
+        />
+        <TraceBlock
+          title="Perfil de prompt"
+          items={[
+            promptProfile && typeof promptProfile.profile_name === "string" ? promptProfile.profile_name : null,
+            ...extractStringList(promptProfile?.highlights).slice(0, 4)
+          ].filter((item): item is string => Boolean(item))}
+        />
+        <TraceBlock
+          title="Configuracao juridica"
+          items={[
+            ...extractNamedList(legalConfiguration?.requirements).slice(0, 3),
+            ...extractNamedList(legalConfiguration?.theses).slice(0, 3),
+            ...extractNamedList(legalConfiguration?.templates).slice(0, 2)
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TraceBlock({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3">
+      <p className="text-sm font-medium">{title}</p>
+      <div className="mt-2 space-y-2">
+        {items.length ? items.map((item) => <p key={item} className="text-sm text-muted-foreground">{item}</p>) : <p className="text-sm text-muted-foreground">Nenhum item rastreado.</p>}
       </div>
     </div>
   );

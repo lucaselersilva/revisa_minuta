@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Edit, FileText, Gavel, ListChecks, Loader2, Plus } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { type FieldPath, type FieldValues, type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/empty-state";
@@ -90,6 +90,12 @@ type Props = {
   requirements: PortfolioDocumentRequirement[];
   theses: PortfolioLegalThesis[];
   templates: PortfolioCaseTemplate[];
+};
+
+type PortfolioScopedFormValues = FieldValues & {
+  portfolio_id: string;
+  taxonomy_id?: string | null;
+  is_active: boolean;
 };
 
 export function LegalConfigManager({ portfolios, taxonomies, requirements, theses, templates }: Props) {
@@ -596,7 +602,7 @@ function PortfolioAndTaxonomyFields({
   taxonomies,
   taxonomyOptional = false
 }: {
-  form: ReturnType<typeof useForm<any>>;
+  form: UseFormReturn<PortfolioScopedFormValues>;
   portfolios: Portfolio[];
   taxonomies: Taxonomy[];
   taxonomyOptional?: boolean;
@@ -639,29 +645,53 @@ function FieldText({ form, name, label, placeholder }: { form: ReturnType<typeof
   );
 }
 
-function FieldTextarea({
+function FieldText<TFormValues extends FieldValues>({
+  form,
+  name,
+  label,
+  placeholder
+}: {
+  form: UseFormReturn<TFormValues>;
+  name: FieldPath<TFormValues>;
+  label: string;
+  placeholder: string;
+}) {
+  const error = form.formState.errors[name];
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Input placeholder={placeholder} {...form.register(name)} />
+      {error ? <p className="text-sm text-destructive">{String(error.message ?? "")}</p> : null}
+    </div>
+  );
+}
+
+function FieldTextarea<TFormValues extends FieldValues>({
   form,
   name,
   label,
   placeholder,
   rows = 5
 }: {
-  form: ReturnType<typeof useForm<any>>;
-  name: string;
+  form: UseFormReturn<TFormValues>;
+  name: FieldPath<TFormValues>;
   label: string;
   placeholder: string;
   rows?: number;
 }) {
+  const error = form.formState.errors[name];
+
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
       <Textarea rows={rows} placeholder={placeholder} {...form.register(name)} />
-      {form.formState.errors[name] ? <p className="text-sm text-destructive">{String(form.formState.errors[name]?.message ?? "")}</p> : null}
+      {error ? <p className="text-sm text-destructive">{String(error.message ?? "")}</p> : null}
     </div>
   );
 }
 
-function ActiveToggle({ form }: { form: ReturnType<typeof useForm<any>> }) {
+function ActiveToggle({ form }: { form: UseFormReturn<PortfolioScopedFormValues> }) {
   return (
     <div className="space-y-2">
       <Label>Status</Label>

@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Edit, FileText, Gavel, ListChecks, Loader2, Plus } from "lucide-react";
-import { type ReactNode, useMemo, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useMemo, useState, useTransition } from "react";
 import { type FieldPath, type FieldValues, type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -34,6 +34,15 @@ import {
   updateLegalThesisAction,
   updatePromptProfileAction
 } from "@/features/legal-config/actions/legal-config-actions";
+import {
+  buildDefenseConformitySystemPrompt,
+  buildDefenseConformityUserPrompt
+} from "@/features/ai/prompts/defense-conformity-prompt";
+import { buildPreAnalysisSystemPrompt, buildPreAnalysisUserPrompt } from "@/features/ai/prompts/pre-analysis-prompt";
+import {
+  buildPromptProfileContextLines,
+  getPortfolioStaticGuidance
+} from "@/features/legal-config/lib/prompt-guidance";
 import {
   portfolioCaseTemplateSchema,
   portfolioDocumentRequirementSchema,
@@ -112,6 +121,8 @@ type PortfolioScopedFormValues = FieldValues & {
 
 export function LegalConfigManager({ portfolios, taxonomies, requirements, theses, templates, promptProfiles }: Props) {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>(portfolios[0]?.id ?? "");
+  const [previewAnalysisType, setPreviewAnalysisType] = useState<PromptAnalysisType>("pre_analysis");
+  const [previewTaxonomyId, setPreviewTaxonomyId] = useState<string>("all");
   const [editingRequirement, setEditingRequirement] = useState<PortfolioDocumentRequirement | null>(null);
   const [editingThesis, setEditingThesis] = useState<PortfolioLegalThesis | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<PortfolioCaseTemplate | null>(null);
@@ -141,6 +152,110 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
     () => promptProfiles.filter((item) => item.portfolio_id === selectedPortfolioId),
     [promptProfiles, selectedPortfolioId]
   );
+  const selectedPortfolio = useMemo(
+    () => portfolios.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null,
+    [portfolios, selectedPortfolioId]
+  );
+  const previewTaxonomy = useMemo(
+    () => selectedTaxonomies.find((taxonomy) => taxonomy.id === previewTaxonomyId) ?? null,
+    [previewTaxonomyId, selectedTaxonomies]
+  );
+  const promptPreview = useMemo(() => {
+    if (!selectedPortfolio) {
+      return null;
+    }
+
+    const scopedRequirements = selectedRequirements.filter((item) => {
+      if (previewAnalysisType === "pre_analysis") {
+        if (!["cadastro_inicial", "documentos_autor", "pre_analise"].includes(item.step_key)) {
+          return false;
+        }
+      } else if (!["defesa", "revisao_final"].includes(item.step_key)) {
+        return false;
+      }
+
+      return !item.taxonomy_id || item.taxonomy_id === previewTaxonomy?.id;
+    });
+    const scopedTheses = selectedTheses.filter((item) => !item.taxonomy_id || item.taxonomy_id === previewTaxonomy?.id);
+    const scopedTemplates = selectedTemplates.filter((item) => item.taxonomy_id === previewTaxonomy?.id);
+    const scopedProfiles = selectedPromptProfiles.filter(
+      (item) => item.analysis_type === previewAnalysisType && (!item.taxonomy_id || item.taxonomy_id === previewTaxonomy?.id)
+    );
+    const activePromptProfile =
+      [...scopedProfiles].sort((left, right) => {
+        const leftSpecificity = left.taxonomy_id === previewTaxonomy?.id ? 0 : left.taxonomy_id ? 1 : 2;
+        const rightSpecificity = right.taxonomy_id === previewTaxonomy?.id ? 0 : right.taxonomy_id ? 1 : 2;
+        if (leftSpecificity !== rightSpecificity) {
+          return leftSpecificity - rightSpecificity;
+        }
+        return right.updated_at.localeCompare(left.updated_at);
+      })[0] ?? null;
+
+    const staticGuidance = getPortfolioStaticGuidance({
+      portfolioSlug: selectedPortfolio.slug,
+      portfolioSegment: selectedPortfolio.segment,
+      analysisType: previewAnalysisType
+    });
+
+    const mockContext = [
+      "[Pre-visualizacao administrativa do prompt]",
+      "Este bloco simula a montagem do prompt efetivo sem dados concretos de um processo.",
+      "",
+      "[Escopo selecionado]",
+      `Carteira: ${selectedPortfolio.name}`,
+      `Taxonomia: ${previewTaxonomy ? `${previewTaxonomy.code} - ${previewTaxonomy.name}` : "Geral da carteira"}`,
+      `Tipo de analise: ${promptAnalysisTypeLabels[previewAnalysisType]}`,
+      "",
+      "[Configuracao juridica ativa]",
+      `Requisitos ativos considerados: ${scopedRequirements.length > 0 ? scopedRequirements.map((item) => `${item.requirement_label} (${item.document_type})`).join("; ") : "nenhum requisito ativo para este escopo"}`,
+      ...(scopedTheses.length > 0
+        ? ["Teses consolidadas consideradas:", ...scopedTheses.map((item) => `- ${item.title}: ${item.summary}`)]
+        : ["Teses consolidadas consideradas: nenhuma tese ativa para este escopo."]),
+      ...(scopedTemplates.length > 0
+        ? [
+            "Modelo-base considerado:",
+            ...scopedTemplates.slice(0, 1).map((item) => `${item.title}\n${item.template_markdown}`)
+          ]
+        : ["Modelo-base considerado: nenhum modelo-base ativo para esta taxonomia."]),
+      "",
+      "[Diretrizes operacionais da carteira]",
+      `Estrategia base considerada: ${staticGuidance.strategyLabel}.`,
+      "Focos operacionais prioritarios:",
+      ...staticGuidance.focusAreas.map((item) => `- ${item}`),
+      "Cuidados de leitura:",
+      ...staticGuidance.cautionPoints.map((item) => `- ${item}`),
+      "Enfase esperada na saida:",
+      ...staticGuidance.outputEmphasis.map((item) => `- ${item}`),
+      "",
+      "[Refino administrativo de prompt]",
+      ...buildPromptProfileContextLines(activePromptProfile)
+    ].join("\n");
+
+    return {
+      activePromptProfile,
+      systemPrompt:
+        previewAnalysisType === "pre_analysis"
+          ? buildPreAnalysisSystemPrompt()
+          : buildDefenseConformitySystemPrompt(),
+      userPrompt:
+        previewAnalysisType === "pre_analysis"
+          ? buildPreAnalysisUserPrompt(mockContext)
+          : buildDefenseConformityUserPrompt(mockContext),
+      counts: {
+        requirements: scopedRequirements.length,
+        theses: scopedTheses.length,
+        templates: scopedTemplates.length
+      }
+    };
+  }, [
+    previewAnalysisType,
+    previewTaxonomy,
+    selectedPortfolio,
+    selectedPromptProfiles,
+    selectedRequirements,
+    selectedTemplates,
+    selectedTheses
+  ]);
 
   return (
     <div className="space-y-6">
@@ -180,6 +295,72 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
                 <p className="text-sm text-muted-foreground">Nenhuma taxonomia cadastrada para esta carteira.</p>
               )}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pre-visualizacao do prompt</CardTitle>
+          <CardDescription>
+            Visualizacao somente leitura do prompt efetivo por carteira, taxonomia e tipo de analise.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Tipo de analise</Label>
+              <Select value={previewAnalysisType} onValueChange={(value) => setPreviewAnalysisType(value as PromptAnalysisType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(promptAnalysisTypeLabels).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Taxonomia</Label>
+              <Select value={previewTaxonomyId} onValueChange={setPreviewTaxonomyId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Geral da carteira</SelectItem>
+                  {selectedTaxonomies.map((taxonomy) => (
+                    <SelectItem key={taxonomy.id} value={taxonomy.id}>
+                      {taxonomy.code} - {taxonomy.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-lg border bg-muted/25 p-4">
+              <p className="text-sm font-medium">Base considerada</p>
+              <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <p>Requisitos: {promptPreview?.counts.requirements ?? 0}</p>
+                <p>Teses: {promptPreview?.counts.theses ?? 0}</p>
+                <p>Modelos-base: {promptPreview?.counts.templates ?? 0}</p>
+                <p>Perfil de prompt: {promptPreview?.activePromptProfile?.profile_name ?? "Nenhum ativo"}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 2xl:grid-cols-2">
+            <ReadonlyPromptBlock
+              title="Prompt de sistema"
+              description="Camada base do sistema, usada como instrução principal da IA."
+              value={promptPreview?.systemPrompt ?? "Selecione uma carteira para visualizar o prompt."}
+            />
+            <ReadonlyPromptBlock
+              title="Prompt consolidado do usuario"
+              description="Previa consolidada com diretrizes da carteira, configuracao juridica e perfil administrativo."
+              value={promptPreview?.userPrompt ?? "Selecione uma carteira para visualizar o prompt."}
+            />
           </div>
         </CardContent>
       </Card>
@@ -428,7 +609,6 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
           <TableHeader>
             <TableRow>
               <TableHead>Taxonomia</TableHead>
-              <TableHead>Titulo</TableHead>
               <TableHead>Observacoes</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-24 text-right">Acoes</TableHead>
@@ -437,8 +617,9 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
           <TableBody>
             {selectedTemplates.map((item) => (
               <TableRow key={item.id}>
-                <TableCell>{taxonomies.find((taxonomy) => taxonomy.id === item.taxonomy_id)?.code ?? "Sem taxonomia"}</TableCell>
-                <TableCell className="font-medium">{item.title}</TableCell>
+                <TableCell className="font-medium">
+                  {taxonomies.find((taxonomy) => taxonomy.id === item.taxonomy_id)?.code ?? "Sem taxonomia"}
+                </TableCell>
                 <TableCell className="max-w-md text-muted-foreground">{item.usage_notes ?? "Sem observacoes"}</TableCell>
                 <TableCell>
                   <Badge variant={item.is_active ? "success" : "secondary"}>{item.is_active ? "Ativo" : "Inativo"}</Badge>
@@ -461,7 +642,7 @@ export function LegalConfigManager({ portfolios, taxonomies, requirements, these
             ))}
             {selectedTemplates.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="p-6">
+                <TableCell colSpan={4} className="p-6">
                   <EmptyState icon={FileText} title="Nenhum modelo-base cadastrado" description="Cadastre os modelos-base por taxonomia." />
                 </TableCell>
               </TableRow>
@@ -782,17 +963,35 @@ function CaseTemplateForm({
     values: {
       portfolio_id: template?.portfolio_id ?? initialPortfolioId,
       taxonomy_id: template?.taxonomy_id ?? "",
-      title: template?.title ?? "",
+      title: template?.title ?? "Modelo base",
       template_markdown: template?.template_markdown ?? "",
       usage_notes: template?.usage_notes ?? "",
       is_active: template?.is_active ?? true
     }
   });
   const filteredTaxonomies = taxonomies.filter((taxonomy) => taxonomy.portfolio_id === form.watch("portfolio_id"));
+  const selectedTaxonomy = filteredTaxonomies.find((taxonomy) => taxonomy.id === form.watch("taxonomy_id"));
+
+  useEffect(() => {
+    if (!selectedTaxonomy) {
+      return;
+    }
+
+    const nextTitle = `Modelo base - ${selectedTaxonomy.code}`;
+    if (form.getValues("title") !== nextTitle) {
+      form.setValue("title", nextTitle, { shouldDirty: true });
+    }
+  }, [form, selectedTaxonomy]);
 
   function onSubmit(values: PortfolioCaseTemplateInput) {
     startTransition(async () => {
-      const result = template ? await updateCaseTemplateAction(template.id, values) : await createCaseTemplateAction(values);
+      const normalizedValues: PortfolioCaseTemplateInput = {
+        ...values,
+        title: selectedTaxonomy ? `Modelo base - ${selectedTaxonomy.code}` : values.title
+      };
+      const result = template
+        ? await updateCaseTemplateAction(template.id, normalizedValues)
+        : await createCaseTemplateAction(normalizedValues);
 
       if (result.ok) {
         toast.success(result.message);
@@ -807,11 +1006,10 @@ function CaseTemplateForm({
     <DialogContent className="max-w-3xl">
       <DialogHeader>
         <DialogTitle>{template ? "Editar modelo-base" : "Novo modelo-base"}</DialogTitle>
-        <DialogDescription>Use texto aprovado pela operacao juridica para orientar a revisao das contestacoes.</DialogDescription>
+        <DialogDescription>Use a taxonomia como referencia principal do modelo-base e refine o conteudo aprovado pela operacao juridica.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
         <PortfolioAndTaxonomyFields form={form} portfolios={portfolios} taxonomies={filteredTaxonomies} />
-        <FieldText form={form} name="title" label="Titulo" placeholder="Ex.: Modelo base - A1" />
         <FieldTextarea form={form} name="template_markdown" label="Conteudo do modelo" placeholder="Estruture aqui o modelo-base em markdown." rows={14} />
         <FieldTextarea form={form} name="usage_notes" label="Observacoes" placeholder="Notas de uso, cautelas e limites do modelo." />
         <ActiveToggle form={form} />
@@ -948,6 +1146,24 @@ function ActiveToggle<TFormValues extends PortfolioScopedFormValues>({ form }: {
           <SelectItem value="false">Inativo</SelectItem>
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+function ReadonlyPromptBlock({
+  title,
+  description,
+  value
+}: {
+  title: string;
+  description: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <p className="font-medium">{title}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <Textarea value={value} readOnly rows={18} className="mt-3 font-mono text-xs leading-5" />
     </div>
   );
 }

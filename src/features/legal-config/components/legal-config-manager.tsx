@@ -596,22 +596,31 @@ function CaseTemplateForm({
   );
 }
 
-function PortfolioAndTaxonomyFields({
+function PortfolioAndTaxonomyFields<TFormValues extends PortfolioScopedFormValues>({
   form,
   portfolios,
   taxonomies,
   taxonomyOptional = false
 }: {
-  form: UseFormReturn<PortfolioScopedFormValues>;
+  form: UseFormReturn<TFormValues>;
   portfolios: Portfolio[];
   taxonomies: Taxonomy[];
   taxonomyOptional?: boolean;
 }) {
+  const portfolioField = "portfolio_id" as FieldPath<TFormValues>;
+  const taxonomyField = "taxonomy_id" as FieldPath<TFormValues>;
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="space-y-2">
         <Label>Carteira</Label>
-        <Select value={form.watch("portfolio_id")} onValueChange={(value) => { form.setValue("portfolio_id", value, { shouldDirty: true }); form.setValue("taxonomy_id", taxonomyOptional ? null : ""); }}>
+        <Select
+          value={String(form.watch(portfolioField))}
+          onValueChange={(value) => {
+            form.setValue(portfolioField, value as TFormValues[FieldPath<TFormValues>], { shouldDirty: true });
+            form.setValue(taxonomyField, (taxonomyOptional ? null : "") as TFormValues[FieldPath<TFormValues>]);
+          }}
+        >
           <SelectTrigger><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
           <SelectContent>
             {portfolios.map((portfolio) => <SelectItem key={portfolio.id} value={portfolio.id}>{portfolio.name}</SelectItem>)}
@@ -621,8 +630,10 @@ function PortfolioAndTaxonomyFields({
       <div className="space-y-2">
         <Label>Taxonomia</Label>
         <Select
-          value={form.watch("taxonomy_id") ?? (taxonomyOptional ? "all" : "")}
-          onValueChange={(value) => form.setValue("taxonomy_id", value === "all" ? null : value, { shouldDirty: true })}
+          value={String(form.watch(taxonomyField) ?? (taxonomyOptional ? "all" : ""))}
+          onValueChange={(value) =>
+            form.setValue(taxonomyField, (value === "all" ? null : value) as TFormValues[FieldPath<TFormValues>], { shouldDirty: true })
+          }
         >
           <SelectTrigger><SelectValue placeholder={taxonomyOptional ? "Todas as taxonomias" : "Selecione a taxonomia"} /></SelectTrigger>
           <SelectContent>
@@ -631,16 +642,6 @@ function PortfolioAndTaxonomyFields({
           </SelectContent>
         </Select>
       </div>
-    </div>
-  );
-}
-
-function FieldText({ form, name, label, placeholder }: { form: ReturnType<typeof useForm<any>>; name: string; label: string; placeholder: string }) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <Input placeholder={placeholder} {...form.register(name)} />
-      {form.formState.errors[name] ? <p className="text-sm text-destructive">{String(form.formState.errors[name]?.message ?? "")}</p> : null}
     </div>
   );
 }
@@ -691,11 +692,18 @@ function FieldTextarea<TFormValues extends FieldValues>({
   );
 }
 
-function ActiveToggle({ form }: { form: UseFormReturn<PortfolioScopedFormValues> }) {
+function ActiveToggle<TFormValues extends PortfolioScopedFormValues>({ form }: { form: UseFormReturn<TFormValues> }) {
+  const activeField = "is_active" as FieldPath<TFormValues>;
+
   return (
     <div className="space-y-2">
       <Label>Status</Label>
-      <Select value={String(form.watch("is_active"))} onValueChange={(value) => form.setValue("is_active", value === "true", { shouldDirty: true })}>
+      <Select
+        value={String(form.watch(activeField))}
+        onValueChange={(value) =>
+          form.setValue(activeField, (value === "true") as TFormValues[FieldPath<TFormValues>], { shouldDirty: true })
+        }
+      >
         <SelectTrigger><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="true">Ativo</SelectItem>

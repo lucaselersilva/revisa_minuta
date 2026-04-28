@@ -1,6 +1,13 @@
 import type { CaseDetail } from "@/features/cases/types";
 import type { PreAnalysisSnapshot } from "@/features/document-ingestion/types";
-import type { CaseWorkflow, CaseWorkflowStep, WorkflowStepKey } from "@/types/database";
+import type {
+  CaseWorkflow,
+  CaseWorkflowStep,
+  PortfolioCaseTemplate,
+  PortfolioDocumentRequirement,
+  PortfolioLegalThesis,
+  WorkflowStepKey
+} from "@/types/database";
 
 export type WorkflowValidationResult = {
   isValid: boolean;
@@ -23,6 +30,11 @@ export type CaseWorkflowState = {
   currentStep: CaseWorkflowStep;
   progress: number;
   preAnalysis: PreAnalysisSnapshot | null;
+  legalConfig: {
+    requirements: PortfolioDocumentRequirement[];
+    theses: PortfolioLegalThesis[];
+    templates: PortfolioCaseTemplate[];
+  };
   currentValidation: WorkflowValidationResult;
 };
 

@@ -37,6 +37,18 @@ export type Office = {
   updated_at: string;
 };
 
+export type Portfolio = {
+  id: string;
+  office_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  segment: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Profile = {
   id: string;
   office_id: string | null;
@@ -61,6 +73,7 @@ export type UserInvite = {
 export type Taxonomy = {
   id: string;
   office_id: string | null;
+  portfolio_id: string | null;
   code: string;
   name: string;
   description: string | null;
@@ -83,6 +96,7 @@ export type AuditLog = {
 export type Case = {
   id: string;
   office_id: string;
+  portfolio_id: string;
   case_number: string | null;
   title: string | null;
   description: string | null;
@@ -107,6 +121,7 @@ export type CaseParty = {
 export type CaseEntity = {
   id: string;
   office_id: string;
+  portfolio_id: string;
   name: string;
   document: string | null;
   created_at: string;
@@ -168,9 +183,52 @@ export type CaseWorkflowStep = {
 export type WorkflowRule = {
   id: string;
   office_id: string;
+  portfolio_id: string;
   step_key: string;
   rule_key: string;
   rule_label: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PortfolioDocumentRequirement = {
+  id: string;
+  office_id: string;
+  portfolio_id: string;
+  taxonomy_id: string | null;
+  step_key: WorkflowStepKey;
+  document_type: CaseDocumentType;
+  requirement_label: string;
+  requirement_details: string | null;
+  is_required: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PortfolioLegalThesis = {
+  id: string;
+  office_id: string;
+  portfolio_id: string;
+  taxonomy_id: string | null;
+  title: string;
+  summary: string;
+  legal_basis: string | null;
+  applicability_notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PortfolioCaseTemplate = {
+  id: string;
+  office_id: string;
+  portfolio_id: string;
+  taxonomy_id: string;
+  title: string;
+  template_markdown: string;
+  usage_notes: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

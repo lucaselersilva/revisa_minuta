@@ -12,14 +12,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CaseStatusBadge, caseStatusLabels } from "@/features/cases/components/case-status-badge";
 import type { CaseListItem } from "@/features/cases/types";
 import { caseStatuses } from "@/lib/validations/cases";
-import type { Taxonomy } from "@/types/database";
+import type { Portfolio, Taxonomy } from "@/types/database";
 
 type Props = {
   cases: CaseListItem[];
+  portfolios: Portfolio[];
   taxonomies: Taxonomy[];
 };
 
-export function CaseList({ cases, taxonomies }: Props) {
+export function CaseList({ cases, portfolios, taxonomies }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -42,7 +43,21 @@ export function CaseList({ cases, taxonomies }: Props) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input className="pl-9" value="Busca por filtros estruturados em breve" readOnly />
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
+          <Select value={searchParams.get("portfolio") ?? "all"} onValueChange={(value) => updateFilter("portfolio", value)}>
+            <SelectTrigger className="md:w-56">
+              <SelectValue placeholder="Carteira" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as carteiras</SelectItem>
+              {portfolios.map((portfolio) => (
+                <SelectItem key={portfolio.id} value={portfolio.id}>
+                  {portfolio.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select value={searchParams.get("status") ?? "all"} onValueChange={(value) => updateFilter("status", value)}>
             <SelectTrigger className="md:w-52">
               <Filter className="h-4 w-4 text-muted-foreground" />
@@ -80,6 +95,7 @@ export function CaseList({ cases, taxonomies }: Props) {
             <TableRow>
               <TableHead>Numero</TableHead>
               <TableHead>Titulo</TableHead>
+              <TableHead>Carteira</TableHead>
               <TableHead>Taxonomia</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Responsavel</TableHead>
@@ -95,6 +111,7 @@ export function CaseList({ cases, taxonomies }: Props) {
                     {item.title || "Processo sem titulo"}
                   </Link>
                 </TableCell>
+                <TableCell className="text-muted-foreground">{item.portfolio?.name ?? "Sem carteira"}</TableCell>
                 <TableCell className="text-muted-foreground">
                   {item.taxonomy ? `${item.taxonomy.code} - ${item.taxonomy.name}` : "Nao definida"}
                 </TableCell>
@@ -107,7 +124,7 @@ export function CaseList({ cases, taxonomies }: Props) {
             ))}
             {cases.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="p-6">
+                <TableCell colSpan={7} className="p-6">
                   <EmptyState
                     icon={BriefcaseBusiness}
                     title="Nenhum processo encontrado"

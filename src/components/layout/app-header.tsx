@@ -14,7 +14,7 @@ export function AppHeader() {
             Ambiente autenticado
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Operacao MaxMilhas, com base preparada para expansao multi-tenant.
+            Operacao multi-carteira, com base preparada para expansao juridica por cliente.
           </p>
         </div>
         <form action={signOutAction}>

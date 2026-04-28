@@ -10,7 +10,15 @@ import { writeCaseHistory } from "@/features/cases/services/case-history-service
 import { getPreAnalysisSnapshot } from "@/features/document-ingestion/queries/get-pre-analysis-snapshot";
 import { createClient } from "@/lib/supabase/server";
 import { writeAuditLog } from "@/services/audit-log-service";
-import type { CaseWorkflow, CaseWorkflowStep, Profile, WorkflowStepKey } from "@/types/database";
+import type {
+  CaseWorkflow,
+  CaseWorkflowStep,
+  PortfolioCaseTemplate,
+  PortfolioDocumentRequirement,
+  PortfolioLegalThesis,
+  Profile,
+  WorkflowStepKey
+} from "@/types/database";
 
 export function validateStepCompletion(
   state: CaseWorkflowState,
@@ -22,8 +30,13 @@ export function validateStepCompletion(
 
 export async function getCaseWorkflowState(caseId: string): Promise<CaseWorkflowState | null> {
   const supabase = await createClient();
-  const [caseItem, workflowResult, stepsResult, preAnalysis] = await Promise.all([
-    getCaseById(caseId),
+  const caseItem = await getCaseById(caseId);
+
+  if (!caseItem) {
+    return null;
+  }
+
+  const [workflowResult, stepsResult, preAnalysis, requirementsResult, thesesResult, templatesResult] = await Promise.all([
     supabase.from("AA_case_workflows").select("*").eq("case_id", caseId).single<CaseWorkflow>(),
     supabase
       .from("AA_case_workflow_steps")
@@ -31,10 +44,28 @@ export async function getCaseWorkflowState(caseId: string): Promise<CaseWorkflow
       .eq("case_id", caseId)
       .order("step_order", { ascending: true })
       .returns<CaseWorkflowStep[]>(),
-    getPreAnalysisSnapshot(caseId)
+    getPreAnalysisSnapshot(caseId),
+    supabase
+      .from("AA_portfolio_document_requirements")
+      .select("*")
+      .eq("portfolio_id", caseItem.portfolio_id)
+      .eq("is_active", true)
+      .returns<PortfolioDocumentRequirement[]>(),
+    supabase
+      .from("AA_portfolio_legal_theses")
+      .select("*")
+      .eq("portfolio_id", caseItem.portfolio_id)
+      .eq("is_active", true)
+      .returns<PortfolioLegalThesis[]>(),
+    supabase
+      .from("AA_portfolio_case_templates")
+      .select("*")
+      .eq("portfolio_id", caseItem.portfolio_id)
+      .eq("is_active", true)
+      .returns<PortfolioCaseTemplate[]>()
   ]);
 
-  if (!caseItem || workflowResult.error || stepsResult.error || !workflowResult.data) {
+  if (workflowResult.error || stepsResult.error || !workflowResult.data) {
     return null;
   }
 
@@ -53,6 +84,11 @@ export async function getCaseWorkflowState(caseId: string): Promise<CaseWorkflow
     currentStep,
     progress: steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0,
     preAnalysis,
+    legalConfig: {
+      requirements: (requirementsResult.data ?? []).filter((item) => !item.taxonomy_id || item.taxonomy_id === caseItem.taxonomy_id),
+      theses: (thesesResult.data ?? []).filter((item) => !item.taxonomy_id || item.taxonomy_id === caseItem.taxonomy_id),
+      templates: (templatesResult.data ?? []).filter((item) => item.taxonomy_id === caseItem.taxonomy_id)
+    },
     currentValidation: {
       isValid: false,
       missingItems: [],

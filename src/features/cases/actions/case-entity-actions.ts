@@ -31,6 +31,7 @@ export async function createCaseEntityAction(input: CaseEntityManagementInput): 
     .from("AA_case_entities")
     .insert({
       office_id: profile.office_id,
+      portfolio_id: parsed.data.portfolio_id,
       name: parsed.data.name,
       document: parsed.data.document ? formatCnpj(parsed.data.document) : null
     })
@@ -71,6 +72,7 @@ export async function updateCaseEntityAction(id: string, input: CaseEntityManage
   const { error } = await supabase
     .from("AA_case_entities")
     .update({
+      portfolio_id: parsed.data.portfolio_id,
       name: parsed.data.name,
       document: parsed.data.document ? formatCnpj(parsed.data.document) : null
     })

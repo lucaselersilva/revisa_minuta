@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { CaseEntityManager } from "@/features/cases/components/case-entity-manager";
 import { getCaseEntities } from "@/features/cases/queries/get-case-entities";
+import { getPortfolios } from "@/features/portfolios/queries/get-portfolios";
 import { getCurrentProfile } from "@/features/profiles/queries/get-current-profile";
 
 export default async function EntitiesPage() {
@@ -12,7 +13,7 @@ export default async function EntitiesPage() {
     redirect("/app");
   }
 
-  const entities = await getCaseEntities();
+  const [entities, portfolios] = await Promise.all([getCaseEntities(), getPortfolios()]);
 
   return (
     <PageShell
@@ -20,7 +21,7 @@ export default async function EntitiesPage() {
       title="Empresas"
       description="Gestao da base de empresas representadas usada no cadastro dos processos."
     >
-      <CaseEntityManager entities={entities} />
+      <CaseEntityManager entities={entities} portfolios={portfolios} />
     </PageShell>
   );
 }

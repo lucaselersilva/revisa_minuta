@@ -108,7 +108,19 @@ async function requireProfile() {
 
 async function resolveRepresentedEntity(input: CaseFormInput["represented_entity"], officeId: string) {
   if (input.mode === "existing" && input.entity_id) {
-    return input.entity_id;
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("AA_case_entities")
+      .select("id, office_id, portfolio_id")
+      .eq("id", input.entity_id)
+      .eq("office_id", officeId)
+      .single<{ id: string; office_id: string; portfolio_id: string }>();
+
+    if (error || !data) {
+      throw new Error("A empresa selecionada nao foi encontrada para este escritorio.");
+    }
+
+    return data;
   }
 
   throw new Error("Selecione uma empresa previamente cadastrada por um administrador.");
@@ -131,11 +143,16 @@ export async function createCaseAction(input: CaseFormInput): Promise<ActionResu
   let createdCaseId: string | null = null;
 
   try {
-    const entityId = await resolveRepresentedEntity(parsed.data.represented_entity, profile.office_id!);
+    const entity = await resolveRepresentedEntity(parsed.data.represented_entity, profile.office_id!);
+    if (entity.portfolio_id !== parsed.data.portfolio_id) {
+      return { ok: false, message: "A empresa representada precisa pertencer a mesma carteira do processo." };
+    }
+
     const { data: createdCase, error } = await supabase
       .from("AA_cases")
       .insert({
         office_id: profile.office_id,
+        portfolio_id: parsed.data.portfolio_id,
         case_number: parsed.data.case_number ? formatCaseNumber(parsed.data.case_number) : null,
         title: parsed.data.title,
         description: parsed.data.description || null,
@@ -154,7 +171,7 @@ export async function createCaseAction(input: CaseFormInput): Promise<ActionResu
 
     await supabase.from("AA_case_entity_links").insert({
       case_id: createdCase.id,
-      entity_id: entityId
+      entity_id: entity.id
     });
 
     await supabase.from("AA_case_parties").insert(
@@ -173,7 +190,11 @@ export async function createCaseAction(input: CaseFormInput): Promise<ActionResu
       caseId: createdCase.id,
       action: "case.created",
       profile,
-      metadata: { title: parsed.data.title, case_number: parsed.data.case_number || null }
+      metadata: {
+        title: parsed.data.title,
+        case_number: parsed.data.case_number || null,
+        portfolio_id: parsed.data.portfolio_id
+      }
     });
 
     await writeAuditLog({
@@ -202,7 +223,12 @@ export async function createCaseFromUploadAction(
     return { ok: false, message: "Perfil interno nao encontrado." };
   }
 
+  const portfolioIdValue = formData.get("portfolio_id");
   const file = formData.get("file");
+
+  if (typeof portfolioIdValue !== "string" || !portfolioIdValue) {
+    return { ok: false, message: "Selecione a carteira antes de iniciar o cadastro por upload." };
+  }
 
   if (!(file instanceof File) || file.size <= 0) {
     return { ok: false, message: "Selecione um arquivo para iniciar o cadastro por upload." };
@@ -214,6 +240,7 @@ export async function createCaseFromUploadAction(
 
   const supabase = await createClient();
   const adminSupabase = createAdminClient();
+  const portfolioId = portfolioIdValue;
   const caseId = crypto.randomUUID();
   const filePath = buildCaseFilePath({
     officeId: profile.office_id,
@@ -238,6 +265,7 @@ export async function createCaseFromUploadAction(
       supabase
         .from("AA_case_entities")
         .select("id, name")
+        .eq("portfolio_id", portfolioId)
         .order("name", { ascending: true })
         .returns<Array<{ id: string; name: string }>>()
     ]);
@@ -254,6 +282,7 @@ export async function createCaseFromUploadAction(
     const { error: caseError } = await supabase.from("AA_cases").insert({
       id: caseId,
       office_id: profile.office_id,
+      portfolio_id: portfolioId,
       case_number: extracted.case_number ? formatCaseNumber(extracted.case_number) : null,
       title,
       description:
@@ -407,6 +436,7 @@ export async function createCaseFromUploadAction(
         file_name: file.name,
         imported_case_number: extracted.case_number,
         imported_authors: extracted.authors,
+        portfolio_id: portfolioId,
         represented_entity_name: extracted.represented_entity_name,
         represented_entity_document: extracted.represented_entity_document,
         used_fallback: extractionResult.usedFallback
@@ -433,6 +463,7 @@ export async function createCaseFromUploadAction(
       metadata: {
         file_name: file.name,
         imported_case_number: extracted.case_number,
+        portfolio_id: portfolioId,
         represented_entity_document: extracted.represented_entity_document,
         used_fallback: extractionResult.usedFallback
       }
@@ -469,10 +500,15 @@ export async function updateCaseAction(id: string, input: CaseFormInput): Promis
   let shouldRedirect = false;
 
   try {
-    const entityId = await resolveRepresentedEntity(parsed.data.represented_entity, profile.office_id!);
+    const entity = await resolveRepresentedEntity(parsed.data.represented_entity, profile.office_id!);
+    if (entity.portfolio_id !== parsed.data.portfolio_id) {
+      return { ok: false, message: "A empresa representada precisa pertencer a mesma carteira do processo." };
+    }
+
     const { error } = await supabase
       .from("AA_cases")
       .update({
+        portfolio_id: parsed.data.portfolio_id,
         case_number: parsed.data.case_number ? formatCaseNumber(parsed.data.case_number) : null,
         title: parsed.data.title,
         description: parsed.data.description || null,
@@ -501,14 +537,14 @@ export async function updateCaseAction(id: string, input: CaseFormInput): Promis
     await supabase.from("AA_case_entity_links").delete().eq("case_id", id);
     await supabase.from("AA_case_entity_links").insert({
       case_id: id,
-      entity_id: entityId
+      entity_id: entity.id
     });
 
     await writeCaseHistory({
       caseId: id,
       action: "case.updated",
       profile,
-      metadata: { title: parsed.data.title, status: parsed.data.status }
+      metadata: { title: parsed.data.title, status: parsed.data.status, portfolio_id: parsed.data.portfolio_id }
     });
 
     await writeAuditLog({

@@ -1,4 +1,4 @@
-export const PRE_ANALYSIS_PROMPT_VERSION = "v7_padrao_pre_defesa";
+export const PRE_ANALYSIS_PROMPT_VERSION = "v8_pre_analise_com_config_juridica";
 
 export function buildPreAnalysisSystemPrompt() {
   return [
@@ -6,6 +6,7 @@ export function buildPreAnalysisSystemPrompt() {
     "Seu papel e produzir um laudo previo profundo, especifico, rastreavel, objetivo e orientado a exploracao defensiva, sem extrapolar o conteudo recebido.",
     "Seu produto e um laudo previo operacional interno, nunca uma peca processual.",
     "Analise apenas o contexto fornecido: peticao inicial, pedidos, documentos do autor, eventual emenda, metadados do caso, partes e texto extraido dos anexos.",
+    "Se houver configuracao juridica ativa da carteira, use-a como guia interno de priorizacao defensiva, sem trata-la como fato provado do caso.",
     "Nao invente fatos, datas, valores, pessoas, documentos, jurisprudencia, fundamentos normativos, autoria documental, fraude, ma-fe ou conclusoes periciais.",
     "Nao afirme fraude. Voce pode apontar apenas: indicio de inconsistencias, indicio de edicao, baixa confiabilidade, necessidade de validacao humana e necessidade de documento complementar.",
     "Quando faltar base suficiente, declare expressamente: nao foi possivel verificar com os documentos disponiveis.",
@@ -111,6 +112,7 @@ export function buildPreAnalysisUserPrompt(context: string) {
     "48. Em documentos_internos_recomendados_para_defesa, sugira apenas materiais com finalidade operacional clara para robustecer a defesa.",
     "49. Antes de consolidar a resposta, verifique coerencia mental: documentos citados no mapa documental devem conversar com suficiencia_probatoria, matriz_final_confronto e analise_por_tipo_documental.",
     "50. Se o contexto for pobre, prefira arrays vazios e uma nota unica em alertas_de_nao_conclusao a preencher campos com boilerplate.",
+    "51. Se houver teses consolidadas ou modelo-base da carteira no contexto, use-os apenas para orientar prioridades defensivas, nunca para preencher lacunas factuais sem suporte documental.",
     "Se algo nao puder ser aferido com o material disponivel, use formulacoes prudentes e curtas, evitando repetir a mesma frase em varios campos.",
     "Quando a mesma ressalva afetar varios blocos, concentre isso em alertas_de_nao_conclusao e integridade_tecnica_arquivos.limitacoes_da_analise.",
     "Nao preencha campos com boilerplate desnecessario. Se nao houver item especifico, prefira arrays vazios, null quando cabivel e justificativas enxutas.",

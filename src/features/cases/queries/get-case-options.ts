@@ -1,10 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
-import type { CaseEntity, Profile, Taxonomy } from "@/types/database";
+import type { CaseEntity, Portfolio, Profile, Taxonomy } from "@/types/database";
 
 export async function getCaseSelectOptions() {
   const supabase = await createClient();
 
-  const [taxonomiesResult, lawyersResult, entitiesResult] = await Promise.all([
+  const [portfoliosResult, taxonomiesResult, lawyersResult, entitiesResult] = await Promise.all([
+    supabase
+      .from("AA_portfolios")
+      .select("*")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .returns<Portfolio[]>(),
     supabase
       .from("AA_taxonomies")
       .select("*")
@@ -25,6 +31,7 @@ export async function getCaseSelectOptions() {
   ]);
 
   return {
+    portfolios: portfoliosResult.data ?? [],
     taxonomies: taxonomiesResult.data ?? [],
     lawyers: lawyersResult.data ?? [],
     entities: entitiesResult.data ?? []

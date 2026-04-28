@@ -5,6 +5,7 @@ import {
   defenseConformityInitialDocumentTypes
 } from "@/features/document-ingestion/lib/eligible-documents";
 import { getCaseById } from "@/features/cases/queries/get-cases";
+import { getActiveLegalConfigurationForPortfolio } from "@/features/legal-config/queries/get-legal-config";
 import { getPreAnalysisSnapshot } from "@/features/document-ingestion/queries/get-pre-analysis-snapshot";
 import { createClient } from "@/lib/supabase/server";
 import type { DocumentIngestion } from "@/types/database";
@@ -33,15 +34,17 @@ export type DefenseConformityContext = {
 
 export async function buildDefenseConformityContext(caseId: string): Promise<DefenseConformityContext | null> {
   const supabase = await createClient();
-  const [caseItem, ingestionsResult, preAnalysisSnapshot] = await Promise.all([
-    getCaseById(caseId),
-    supabase.from("AA_document_ingestions").select("*").returns<DocumentIngestion[]>(),
-    getPreAnalysisSnapshot(caseId)
-  ]);
+  const caseItem = await getCaseById(caseId);
 
   if (!caseItem) {
     return null;
   }
+
+  const [ingestionsResult, preAnalysisSnapshot, legalConfig] = await Promise.all([
+    supabase.from("AA_document_ingestions").select("*").returns<DocumentIngestion[]>(),
+    getPreAnalysisSnapshot(caseId),
+    getActiveLegalConfigurationForPortfolio(caseItem.portfolio_id, caseItem.taxonomy_id)
+  ]);
 
   const ingestions = (ingestionsResult.data ?? []).filter((item) =>
     caseItem.documents.some((document) => document.id === item.case_document_id)
@@ -125,17 +128,26 @@ export async function buildDefenseConformityContext(caseId: string): Promise<Def
     ? normalizePreAnalysisReportPayload(preAnalysisSnapshot.latestCompletedReport.report_json)
     : null;
   const entity = caseItem.entity_links[0]?.entity;
+  const defenseRequirements = legalConfig.requirements.filter((item) => item.step_key === "defesa" || item.step_key === "revisao_final");
+  const activeTemplate = legalConfig.templates[0] ?? null;
+  const activeTheses = legalConfig.theses.slice(0, 6);
   const inputSummary = {
     case_id: caseItem.id,
     case_number: caseItem.case_number,
     title: caseItem.title,
+    portfolio: caseItem.portfolio?.name ?? null,
     represented_entity: entity?.name ?? null,
     initial_documents: initialDocuments.length,
     defense_documents: defenseDocuments.length,
     initial_processed_documents: initialProcessed.length,
     defense_processed_documents: defenseProcessed.length,
     total_characters: totalCharacters,
-    has_pre_analysis_report: Boolean(latestCompletedReport)
+    has_pre_analysis_report: Boolean(latestCompletedReport),
+    legal_config: {
+      requirements_count: defenseRequirements.length,
+      theses_count: activeTheses.length,
+      templates_count: activeTemplate ? 1 : 0
+    }
   };
 
   return {
@@ -150,6 +162,8 @@ export async function buildDefenseConformityContext(caseId: string): Promise<Def
       `Titulo: ${caseItem.title ?? "nao informado"}`,
       `Numero: ${caseItem.case_number ?? "nao informado"}`,
       `Descricao: ${caseItem.description ?? "nao informada"}`,
+      `Carteira: ${caseItem.portfolio?.name ?? "nao informada"}`,
+      `Taxonomia: ${caseItem.taxonomy ? `${caseItem.taxonomy.code} - ${caseItem.taxonomy.name}` : "nao definida"}`,
       `Empresa representada: ${entity?.name ?? "nao vinculada"}`,
       `Responsavel: ${caseItem.responsible_lawyer?.full_name ?? "nao definido"}`,
       "",
@@ -164,6 +178,22 @@ export async function buildDefenseConformityContext(caseId: string): Promise<Def
       "",
       "[Laudo previo da fase inicial]",
       latestCompletedReport ? JSON.stringify(latestCompletedReport, null, 2) : "Nenhum laudo previo concluido disponivel.",
+      "",
+      "[Configuracao juridica ativa da carteira]",
+      "Use esta configuracao apenas como guia interno de aderencia defensiva. Ela nao substitui o conteudo efetivamente presente na contestacao.",
+      `Documentos obrigatorios relevantes da defesa: ${defenseRequirements.length > 0 ? defenseRequirements.map((item) => `${item.requirement_label} (${item.document_type})`).join("; ") : "nenhum requisito configurado"}`,
+      ...(activeTheses.length > 0
+        ? [
+            "Teses consolidadas relevantes:",
+            ...activeTheses.map((item) => `- ${item.title}: ${item.summary}`)
+          ]
+        : ["Teses consolidadas relevantes: nenhuma tese ativa configurada."]),
+      ...(activeTemplate
+        ? [
+            "Modelo-base de referencia da taxonomia atual:",
+            `${activeTemplate.title}\n${truncateText(activeTemplate.template_markdown, 5000)}`
+          ]
+        : ["Modelo-base de referencia da taxonomia atual: nenhum modelo ativo configurado."]),
       "",
       "[Documentos da fase inicial e emenda]",
       ...buildDocumentBlocks(initialProcessed as Array<{ document: (typeof initialProcessed)[number]["document"]; ingestion: NonNullable<(typeof initialProcessed)[number]["ingestion"]> }>),

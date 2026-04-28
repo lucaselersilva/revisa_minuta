@@ -50,6 +50,16 @@ import { validateWorkflowStepCompletion } from "@/features/case-workflow/lib/wor
 import type { CaseWorkflowState, DefensePreparationInput, WorkflowCompletionInput } from "@/features/case-workflow/types";
 import type { Profile, WorkflowStepKey } from "@/types/database";
 
+const stepLabels: Record<WorkflowStepKey, string> = {
+  cadastro_inicial: "Cadastro inicial",
+  documentos_autor: "Documentos do autor",
+  emenda_inicial: "Emenda a inicial",
+  pre_analise: "Pre-analise",
+  defesa: "Defesa",
+  revisao_final: "Revisao final",
+  relatorio: "Relatorio"
+};
+
 export function GuidedCaseWorkflow({ state, profile }: { state: CaseWorkflowState; profile: Profile }) {
   const [selectedStepKey, setSelectedStepKey] = useState<WorkflowStepKey>(state.workflow.current_step);
   const [defensePreparation, setDefensePreparation] = useState<DefensePreparationInput>(() => {
@@ -294,6 +304,7 @@ function StepContent({
         officeId={state.caseItem.office_id}
         documents={state.caseItem.documents}
         snapshot={state.preAnalysis}
+        legalConfig={state.legalConfig}
         preparation={defensePreparation}
         onChange={setDefensePreparation}
         savedConformityReport={extractDefenseConformityFromMetadata(defenseStep?.metadata)}
@@ -318,6 +329,7 @@ function InitialRegistrationStep({ state }: { state: CaseWorkflowState }) {
   const taxonomySuggestion = extractPersistedCaseTaxonomySuggestion(cadastroStep?.metadata);
   const entity = state.caseItem.entity_links[0]?.entity;
   const rows = [
+    { label: "Carteira", value: state.caseItem.portfolio?.name ?? "Nao informada" },
     { label: "Titulo", value: state.caseItem.title || "Nao informado" },
     { label: "Numero", value: state.caseItem.case_number || "Nao informado" },
     { label: "Taxonomia", value: state.caseItem.taxonomy ? `${state.caseItem.taxonomy.code} - ${state.caseItem.taxonomy.name}` : "Nao definida" },
@@ -359,6 +371,22 @@ function InitialRegistrationStep({ state }: { state: CaseWorkflowState }) {
           </div>
         </div>
       </div>
+
+      {state.legalConfig.requirements.length > 0 ? (
+        <div className="rounded-lg border bg-white p-4">
+          <p className="font-semibold">Requisitos jurídicos ativos da carteira</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {state.legalConfig.requirements.slice(0, 6).map((item) => (
+              <div key={item.id} className="rounded-md bg-muted/45 px-3 py-2 text-sm">
+                <p className="font-medium">{item.requirement_label}</p>
+                <p className="text-xs text-muted-foreground">
+                  {stepLabels[item.step_key]} - {documentTypeLabels[item.document_type] ?? item.document_type}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -613,6 +641,7 @@ function DefenseWorkspace({
   officeId,
   documents,
   snapshot,
+  legalConfig,
   preparation,
   onChange,
   savedConformityReport
@@ -621,6 +650,7 @@ function DefenseWorkspace({
   officeId: string;
   documents: CaseWorkflowState["caseItem"]["documents"];
   snapshot: CaseWorkflowState["preAnalysis"];
+  legalConfig: CaseWorkflowState["legalConfig"];
   preparation: DefensePreparationInput;
   onChange: (value: DefensePreparationInput) => void;
   savedConformityReport: ReturnType<typeof extractDefenseConformityFromMetadata>;
@@ -633,6 +663,8 @@ function DefenseWorkspace({
   const latestReport = snapshot?.latestCompletedReport ?? null;
   const hasAcknowledgement = Boolean(snapshot?.latestAcknowledgementForLatestReport);
   const conformityReport = savedConformityReport?.report_json ?? null;
+  const activeTemplate = legalConfig.templates[0] ?? null;
+  const activeTheses = legalConfig.theses.slice(0, 5);
   const checklistItems = [
     ["preAnalysisReviewed", "Pre-analise revisada e incorporada na estrategia"],
     ["defenseStrategyDefined", "Linha defensiva principal definida"],
@@ -795,6 +827,34 @@ function DefenseWorkspace({
                 A defesa ainda nao tem laudo previo concluido. Gere e confirme a pre-analise antes de fechar esta etapa.
               </p>
             )}
+          </div>
+
+          <div className="rounded-lg border bg-white p-5">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Modelo-base e teses da carteira</h3>
+            </div>
+            {activeTemplate ? (
+              <div className="mt-4 rounded-md border bg-muted/30 p-3">
+                <p className="font-medium">{activeTemplate.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{activeTemplate.usage_notes ?? "Sem observacoes adicionais."}</p>
+                <pre className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-700">{activeTemplate.template_markdown}</pre>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">Nenhum modelo-base ativo para a taxonomia atual.</p>
+            )}
+            <div className="mt-4 space-y-2">
+              {activeTheses.length > 0 ? (
+                activeTheses.map((thesis) => (
+                  <div key={thesis.id} className="rounded-md border bg-muted/25 p-3">
+                    <p className="font-medium">{thesis.title}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{thesis.summary}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhuma tese ativa configurada para a carteira atual.</p>
+              )}
+            </div>
           </div>
 
           <div className="rounded-lg border bg-white p-5">

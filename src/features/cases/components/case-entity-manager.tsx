@@ -20,17 +20,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createCaseEntityAction, updateCaseEntityAction } from "@/features/cases/actions/case-entity-actions";
 import { formatCnpj } from "@/lib/utils";
 import { caseEntityManagementSchema, type CaseEntityManagementInput } from "@/lib/validations/entities";
-import type { CaseEntity } from "@/types/database";
+import type { CaseEntity, Portfolio } from "@/types/database";
 
 type Props = {
   entities: CaseEntity[];
+  portfolios: Portfolio[];
 };
 
-export function CaseEntityManager({ entities }: Props) {
+export function CaseEntityManager({ entities, portfolios }: Props) {
   const [editing, setEditing] = useState<CaseEntity | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -58,7 +60,7 @@ export function CaseEntityManager({ entities }: Props) {
               Nova empresa
             </Button>
           </DialogTrigger>
-          <CaseEntityForm entity={editing} onClose={() => setOpen(false)} />
+          <CaseEntityForm entity={editing} portfolios={portfolios} onClose={() => setOpen(false)} />
         </Dialog>
       </div>
 
@@ -66,6 +68,7 @@ export function CaseEntityManager({ entities }: Props) {
         <TableHeader>
           <TableRow>
             <TableHead>Empresa</TableHead>
+            <TableHead>Carteira</TableHead>
             <TableHead>CNPJ</TableHead>
             <TableHead>Criada em</TableHead>
             <TableHead className="w-24 text-right">Acoes</TableHead>
@@ -75,6 +78,7 @@ export function CaseEntityManager({ entities }: Props) {
           {entities.map((entity) => (
             <TableRow key={entity.id}>
               <TableCell className="font-medium">{entity.name}</TableCell>
+              <TableCell>{portfolios.find((portfolio) => portfolio.id === entity.portfolio_id)?.name ?? "Sem carteira"}</TableCell>
               <TableCell>{entity.document ? formatCnpj(entity.document) : "Nao informado"}</TableCell>
               <TableCell className="text-muted-foreground">{new Date(entity.created_at).toLocaleString("pt-BR")}</TableCell>
               <TableCell>
@@ -88,7 +92,7 @@ export function CaseEntityManager({ entities }: Props) {
           ))}
           {entities.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={4} className="p-6">
+              <TableCell colSpan={5} className="p-6">
                 <EmptyState
                   icon={Building2}
                   title="Nenhuma empresa cadastrada"
@@ -103,11 +107,20 @@ export function CaseEntityManager({ entities }: Props) {
   );
 }
 
-function CaseEntityForm({ entity, onClose }: { entity: CaseEntity | null; onClose: () => void }) {
+function CaseEntityForm({
+  entity,
+  portfolios,
+  onClose
+}: {
+  entity: CaseEntity | null;
+  portfolios: Portfolio[];
+  onClose: () => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const form = useForm<CaseEntityManagementInput>({
     resolver: zodResolver(caseEntityManagementSchema),
     values: {
+      portfolio_id: entity?.portfolio_id ?? portfolios[0]?.id ?? "",
       name: entity?.name ?? "",
       document: entity?.document ? formatCnpj(entity.document) : ""
     }
@@ -134,6 +147,22 @@ function CaseEntityForm({ entity, onClose }: { entity: CaseEntity | null; onClos
         <DialogDescription>Esses dados ficam disponiveis para vinculacao nos processos do escritorio.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <div className="space-y-2">
+          <Label>Carteira</Label>
+          <Select value={form.watch("portfolio_id")} onValueChange={(value) => form.setValue("portfolio_id", value, { shouldDirty: true })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione a carteira" />
+            </SelectTrigger>
+            <SelectContent>
+              {portfolios.map((portfolio) => (
+                <SelectItem key={portfolio.id} value={portfolio.id}>
+                  {portfolio.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {form.formState.errors.portfolio_id ? <p className="text-sm text-destructive">{form.formState.errors.portfolio_id.message}</p> : null}
+        </div>
         <div className="space-y-2">
           <Label htmlFor="entity_name">Nome</Label>
           <Input id="entity_name" placeholder="Empresa XYZ Ltda." {...form.register("name")} />

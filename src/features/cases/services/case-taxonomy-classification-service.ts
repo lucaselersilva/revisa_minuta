@@ -98,6 +98,7 @@ function buildClassificationContext({
 
   const context = [
     `[Dados cadastrais]`,
+    `Carteira: ${caseItem.portfolio?.name ?? "nao informada"}`,
     `Titulo: ${caseItem.title ?? "nao informado"}`,
     `Numero: ${caseItem.case_number ?? "nao informado"}`,
     `Descricao: ${caseItem.description ?? "nao informada"}`,
@@ -129,9 +130,8 @@ function buildClassificationContext({
 
 export async function generateCaseTaxonomySuggestion(caseId: string, profile: Profile) {
   const supabase = await createClient();
-  const [caseItem, taxonomiesResult, ingestionsResult] = await Promise.all([
+  const [caseItem, ingestionsResult] = await Promise.all([
     getCaseById(caseId),
-    supabase.from("AA_taxonomies").select("*").eq("is_active", true).order("code", { ascending: true }).returns<Taxonomy[]>(),
     supabase.from("AA_document_ingestions").select("*").returns<DocumentIngestion[]>()
   ]);
 
@@ -139,7 +139,15 @@ export async function generateCaseTaxonomySuggestion(caseId: string, profile: Pr
     throw new Error("Processo nao encontrado.");
   }
 
-  const taxonomies = taxonomiesResult.data ?? [];
+  const { data: taxonomiesData } = await supabase
+    .from("AA_taxonomies")
+    .select("*")
+    .eq("is_active", true)
+    .eq("portfolio_id", caseItem.portfolio_id)
+    .order("code", { ascending: true })
+    .returns<Taxonomy[]>();
+
+  const taxonomies = taxonomiesData ?? [];
   if (taxonomies.length === 0) {
     throw new Error("Nao ha taxonomias ativas para classificar este processo.");
   }

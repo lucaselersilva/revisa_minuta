@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, BriefcaseBusiness, Building2, FolderKanban, Scale, Settings, Tags, Users } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, FileText, FolderKanban, Layers3, Scale, Settings, Tags, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -11,6 +11,8 @@ import type { Profile } from "@/types/database";
 const navigation = [
   { href: "/app", label: "Dashboard", icon: BarChart3, role: "all" },
   { href: "/app/cases", label: "Processos", icon: BriefcaseBusiness, role: "all" },
+  { href: "/app/admin/portfolios", label: "Carteiras", icon: Layers3, role: "admin" },
+  { href: "/app/admin/legal-config", label: "Config. juridica", icon: FileText, role: "admin" },
   { href: "/app/admin/entities", label: "Empresas", icon: Building2, role: "admin" },
   { href: "/app/admin/taxonomies", label: "Taxonomias", icon: Tags, role: "admin" },
   { href: "/app/admin/users", label: "Usuarios", icon: Users, role: "admin" },

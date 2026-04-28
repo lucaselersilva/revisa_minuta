@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { CaseForm } from "@/features/cases/components/case-form";
 import { createCaseFromUploadAction } from "@/features/cases/actions/case-actions";
 import type { CaseSelectOptions } from "@/features/cases/types";
-import type { Profile } from "@/types/database";
+import type { Portfolio, Profile } from "@/types/database";
 
 type IntakeMode = "manual" | "upload";
 
@@ -46,7 +46,11 @@ export function NewCaseEntry({
         />
       </div>
 
-      {mode === "manual" ? <CaseForm options={options} canManageEntities={profile.role === "admin"} /> : <CreateCaseFromUploadCard profile={profile} />}
+      {mode === "manual" ? (
+        <CaseForm options={options} canManageEntities={profile.role === "admin"} />
+      ) : (
+        <CreateCaseFromUploadCard profile={profile} portfolios={options.portfolios} />
+      )}
     </div>
   );
 }
@@ -92,9 +96,11 @@ function ModeCard({
   );
 }
 
-function CreateCaseFromUploadCard({ profile }: { profile: Profile }) {
+function CreateCaseFromUploadCard({ profile, portfolios }: { profile: Profile; portfolios: Portfolio[] }) {
   const [state, formAction, isPending] = useActionState(createCaseFromUploadAction, null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>(portfolios[0]?.id ?? "");
+  const selectedPortfolio = portfolios.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null;
 
   useEffect(() => {
     if (state?.ok === false) {
@@ -117,6 +123,25 @@ function CreateCaseFromUploadCard({ profile }: { profile: Profile }) {
             action={formAction}
           >
             <div className="space-y-2">
+              <Label htmlFor="case-intake-portfolio">Carteira</Label>
+              <select
+                id="case-intake-portfolio"
+                name="portfolio_id"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={selectedPortfolioId}
+                onChange={(event) => setSelectedPortfolioId(event.target.value)}
+              >
+                <option value="">Selecione a carteira</option>
+                {portfolios.map((portfolio) => (
+                  <option key={portfolio.id} value={portfolio.id}>
+                    {portfolio.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-slate-500">A carteira define quais empresas e taxonomias poderao ser usadas neste processo.</p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="case-intake-file">Arquivo base</Label>
               <Input
                 id="case-intake-file"
@@ -134,9 +159,10 @@ function CreateCaseFromUploadCard({ profile }: { profile: Profile }) {
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Responsavel inicial</p>
               <p className="mt-2 text-sm font-semibold text-slate-900">{profile.full_name ?? "Usuario interno"}</p>
               <p className="mt-1 text-sm text-slate-500">O processo ja nasce vinculado ao usuario logado como advogado responsavel.</p>
+              {selectedPortfolio ? <p className="mt-1 text-sm text-slate-500">Carteira selecionada: {selectedPortfolio.name}</p> : null}
             </div>
 
-            <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
+            <Button type="submit" disabled={isPending || !selectedPortfolioId} className="w-full sm:w-auto">
               {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
               Criar processo a partir do upload
             </Button>

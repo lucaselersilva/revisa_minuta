@@ -9,6 +9,7 @@ import { getCases } from "@/features/cases/queries/get-cases";
 
 type Props = {
   searchParams: Promise<{
+    portfolio?: string;
     status?: string;
     taxonomy?: string;
   }>;
@@ -17,7 +18,7 @@ type Props = {
 export default async function CasesPage({ searchParams }: Props) {
   const params = await searchParams;
   const [cases, options] = await Promise.all([
-    getCases({ status: params.status, taxonomyId: params.taxonomy }),
+    getCases({ portfolioId: params.portfolio, status: params.status, taxonomyId: params.taxonomy }),
     getCaseSelectOptions()
   ]);
 
@@ -35,7 +36,7 @@ export default async function CasesPage({ searchParams }: Props) {
         </Button>
       }
     >
-      <CaseList cases={cases} taxonomies={options.taxonomies} />
+      <CaseList cases={cases} portfolios={options.portfolios} taxonomies={options.taxonomies} />
     </PageShell>
   );
 }

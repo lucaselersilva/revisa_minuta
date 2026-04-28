@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const taxonomySchema = z.object({
+  portfolio_id: z.string().uuid("Selecione a carteira da taxonomia."),
   code: z
     .string()
     .min(1, "Informe o codigo.")

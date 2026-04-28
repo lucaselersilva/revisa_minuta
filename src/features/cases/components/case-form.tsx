@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -37,6 +37,7 @@ export function CaseForm({ options, initialCase, importedFromUpload = false, can
   const form = useForm<CaseFormInput>({
     resolver: zodResolver(caseFormSchema),
     defaultValues: {
+      portfolio_id: initialCase?.portfolio_id ?? "",
       case_number: initialCase?.case_number ? formatCaseNumber(initialCase.case_number) : "",
       title: initialCase?.title ?? "",
       description: initialCase?.description ?? "",
@@ -57,8 +58,23 @@ export function CaseForm({ options, initialCase, importedFromUpload = false, can
     }
   });
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "parties" });
+  const selectedPortfolioId = form.watch("portfolio_id");
   const selectedEntityId = form.watch("represented_entity.entity_id");
+  const availableTaxonomies = options.taxonomies.filter((taxonomy) => taxonomy.portfolio_id === selectedPortfolioId);
+  const availableEntities = options.entities.filter((entity) => entity.portfolio_id === selectedPortfolioId);
   const selectedEntity = options.entities.find((entity) => entity.id === selectedEntityId);
+
+  useEffect(() => {
+    const currentTaxonomyId = form.getValues("taxonomy_id");
+    if (currentTaxonomyId && !availableTaxonomies.some((taxonomy) => taxonomy.id === currentTaxonomyId)) {
+      form.setValue("taxonomy_id", undefined, { shouldDirty: true });
+    }
+
+    const currentEntityId = form.getValues("represented_entity.entity_id");
+    if (currentEntityId && !availableEntities.some((entity) => entity.id === currentEntityId)) {
+      form.setValue("represented_entity.entity_id", undefined, { shouldDirty: true });
+    }
+  }, [availableEntities, availableTaxonomies, form]);
 
   function onSubmit(values: CaseFormInput) {
     startTransition(async () => {
@@ -91,6 +107,23 @@ export function CaseForm({ options, initialCase, importedFromUpload = false, can
           <CardDescription>Identificacao operacional do caso. A classificacao automatica da taxonomia pode ser sugerida depois no fluxo guiado.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Carteira</Label>
+            <Select value={form.watch("portfolio_id") || "none"} onValueChange={(value) => form.setValue("portfolio_id", value === "none" ? "" : value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione a carteira" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Selecione</SelectItem>
+                {options.portfolios.map((portfolio) => (
+                  <SelectItem key={portfolio.id} value={portfolio.id}>
+                    {portfolio.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.formState.errors.portfolio_id ? <p className="text-sm text-destructive">{form.formState.errors.portfolio_id.message}</p> : null}
+          </div>
           <div className="space-y-2">
             <Label htmlFor="case_number">Numero</Label>
             <Input
@@ -128,7 +161,7 @@ export function CaseForm({ options, initialCase, importedFromUpload = false, can
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Nao definida</SelectItem>
-                {options.taxonomies.map((taxonomy) => (
+                {availableTaxonomies.map((taxonomy) => (
                   <SelectItem key={taxonomy.id} value={taxonomy.id}>
                     {taxonomy.code} - {taxonomy.name}
                   </SelectItem>
@@ -179,7 +212,7 @@ export function CaseForm({ options, initialCase, importedFromUpload = false, can
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Selecione</SelectItem>
-                {options.entities.map((entity) => (
+                {availableEntities.map((entity) => (
                   <SelectItem key={entity.id} value={entity.id}>
                     {entity.name}
                   </SelectItem>

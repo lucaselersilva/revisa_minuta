@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const caseEntityManagementSchema = z.object({
+  portfolio_id: z.string().uuid("Selecione a carteira da empresa."),
   name: z.string().trim().min(2, "Informe o nome da empresa."),
   document: z
     .string()

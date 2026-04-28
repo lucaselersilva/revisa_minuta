@@ -11,6 +11,10 @@ function hasRepresentedEntity(state: CaseWorkflowState) {
   return state.caseItem.entity_links.some((link) => Boolean(link.entity));
 }
 
+function getRequiredDocumentsForStep(state: CaseWorkflowState, stepKey: WorkflowStepKey) {
+  return state.legalConfig.requirements.filter((item) => item.step_key === stepKey && item.is_required && item.is_active);
+}
+
 function getDefensePreparation(state: CaseWorkflowState, input: WorkflowCompletionInput) {
   if (input.defensePreparation) {
     return normalizeDefensePreparationInput(input.defensePreparation);
@@ -58,6 +62,12 @@ export function validateWorkflowStepCompletion(
     ];
     if (!hasDocument(state, initialDocumentTypes)) {
       missingItems.push("Anexe a peticao inicial ou documentos relevantes do autor.");
+    }
+  }
+
+  for (const requirement of getRequiredDocumentsForStep(state, stepKey)) {
+    if (!hasDocument(state, [requirement.document_type])) {
+      missingItems.push(`Anexe documento obrigatorio: ${requirement.requirement_label}.`);
     }
   }
 
@@ -116,8 +126,8 @@ export function validateWorkflowStepCompletion(
 
   return {
     isValid: missingItems.length === 0,
-    missingItems,
-    warnings,
+    missingItems: [...new Set(missingItems)],
+    warnings: [...new Set(warnings)],
     nextStep
   };
 }

@@ -1,6 +1,7 @@
 import { extractStructuredDocumentAnalysis } from "@/features/document-ingestion/lib/document-analysis-helpers";
 import { getCaseById } from "@/features/cases/queries/get-cases";
 import { isPreAnalysisEligibleDocumentType } from "@/features/document-ingestion/lib/eligible-documents";
+import { getActiveLegalConfigurationForPortfolio } from "@/features/legal-config/queries/get-legal-config";
 import type { PreAnalysisContext } from "@/features/document-ingestion/types";
 import { createClient } from "@/lib/supabase/server";
 import type { DocumentIngestion } from "@/types/database";
@@ -18,17 +19,19 @@ function truncateText(value: string, maxChars: number) {
 
 export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalysisContext | null> {
   const supabase = await createClient();
-  const [caseItem, ingestionsResult] = await Promise.all([
-    getCaseById(caseId),
-    supabase
-      .from("AA_document_ingestions")
-      .select("*")
-      .returns<DocumentIngestion[]>()
-  ]);
+  const caseItem = await getCaseById(caseId);
 
   if (!caseItem) {
     return null;
   }
+
+  const [ingestionsResult, legalConfig] = await Promise.all([
+    supabase
+      .from("AA_document_ingestions")
+      .select("*")
+      .returns<DocumentIngestion[]>(),
+    getActiveLegalConfigurationForPortfolio(caseItem.portfolio_id, caseItem.taxonomy_id)
+  ]);
 
   const ingestions = (ingestionsResult.data ?? []).filter((item) =>
     caseItem.documents.some((document) => document.id === item.case_document_id)
@@ -117,10 +120,16 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
   }
 
   const entity = caseItem.entity_links[0]?.entity;
+  const relevantRequirements = legalConfig.requirements.filter((item) =>
+    item.step_key === "cadastro_inicial" || item.step_key === "documentos_autor" || item.step_key === "pre_analise"
+  );
+  const relevantTemplates = legalConfig.templates.slice(0, 1);
+  const relevantTheses = legalConfig.theses.slice(0, 6);
   const inputSummary = {
     case_id: caseItem.id,
     case_number: caseItem.case_number,
     title: caseItem.title,
+    portfolio: caseItem.portfolio?.name ?? null,
     taxonomy: caseItem.taxonomy ? `${caseItem.taxonomy.code} - ${caseItem.taxonomy.name}` : null,
     responsible_lawyer: caseItem.responsible_lawyer?.full_name ?? null,
     represented_entity: entity?.name ?? null,
@@ -129,7 +138,12 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
     analyzed_documents: documentAnalysisBlocks.length,
     unsupported_documents: ingestions.filter((item) => item.status === "unsupported").length,
     empty_text_documents: ingestions.filter((item) => item.status === "empty_text").length,
-    total_characters: totalCharacters
+    total_characters: totalCharacters,
+    legal_config: {
+      requirements_count: relevantRequirements.length,
+      theses_count: relevantTheses.length,
+      templates_count: relevantTemplates.length
+    }
   };
 
   return {
@@ -144,6 +158,7 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
       `Titulo: ${caseItem.title ?? "nao informado"}`,
       `Numero: ${caseItem.case_number ?? "nao informado"}`,
       `Descricao: ${caseItem.description ?? "nao informada"}`,
+      `Carteira: ${caseItem.portfolio?.name ?? "nao informada"}`,
       `Taxonomia: ${caseItem.taxonomy ? `${caseItem.taxonomy.code} - ${caseItem.taxonomy.name}` : "nao definida"}`,
       `Empresa representada: ${entity?.name ?? "nao vinculada"}`,
       `Responsavel: ${caseItem.responsible_lawyer?.full_name ?? "nao definido"}`,
@@ -157,6 +172,22 @@ export async function buildPreAnalysisContext(caseId: string): Promise<PreAnalys
       "[Orientacao de rastreabilidade]",
       "Ao citar um documento no laudo, prefira usar o nome do arquivo e, quando disponivel, o Documento ID.",
       "Se houver peticao inicial, emenda inicial e documentos do autor, diferencie isso explicitamente.",
+      "",
+      "[Configuracao juridica ativa da carteira]",
+      "Use esta configuracao apenas como guia interno de leitura defensiva. Ela nao substitui os fatos e documentos do caso concreto.",
+      `Documentos obrigatorios relevantes nesta etapa: ${relevantRequirements.length > 0 ? relevantRequirements.map((item) => `${item.requirement_label} (${item.document_type})`).join("; ") : "nenhum requisito configurado"}`,
+      ...(relevantTheses.length > 0
+        ? [
+            "Teses consolidadas relevantes:",
+            ...relevantTheses.map((item) => `- ${item.title}: ${item.summary}`)
+          ]
+        : ["Teses consolidadas relevantes: nenhuma tese ativa configurada."]),
+      ...(relevantTemplates.length > 0
+        ? [
+            "Modelo-base de referencia da taxonomia atual:",
+            ...relevantTemplates.map((item) => `${item.title}\n${truncateText(item.template_markdown, 4000)}`)
+          ]
+        : ["Modelo-base de referencia da taxonomia atual: nenhum modelo ativo configurado."]),
       "",
       "[Analise documental estruturada]",
       ...(documentAnalysisBlocks.length > 0 ? documentAnalysisBlocks : ["Nenhuma analise estruturada disponivel."]),

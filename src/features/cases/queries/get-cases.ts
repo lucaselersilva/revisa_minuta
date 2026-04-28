@@ -5,6 +5,7 @@ import type { CaseDetail, CaseListItem } from "@/features/cases/types";
 type GetCasesFilters = {
   status?: string;
   taxonomyId?: string;
+  portfolioId?: string;
 };
 
 export async function getCases(filters: GetCasesFilters = {}) {
@@ -15,6 +16,7 @@ export async function getCases(filters: GetCasesFilters = {}) {
     .select(
       `
       *,
+      portfolio:AA_portfolios(id, name, slug, segment),
       taxonomy:AA_taxonomies(id, code, name),
       responsible_lawyer:AA_profiles!AA_cases_responsible_lawyer_id_fkey(id, full_name)
     `
@@ -27,6 +29,10 @@ export async function getCases(filters: GetCasesFilters = {}) {
 
   if (filters.taxonomyId) {
     query = query.eq("taxonomy_id", filters.taxonomyId);
+  }
+
+  if (filters.portfolioId) {
+    query = query.eq("portfolio_id", filters.portfolioId);
   }
 
   const { data, error } = await query.returns<CaseListItem[]>();
@@ -59,6 +65,7 @@ export async function getCaseById(id: string) {
     .select(
       `
       *,
+      portfolio:AA_portfolios(id, name, slug, segment),
       taxonomy:AA_taxonomies(id, code, name),
       responsible_lawyer:AA_profiles!AA_cases_responsible_lawyer_id_fkey(id, full_name),
       parties:AA_case_parties(*),

@@ -36,13 +36,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { createTaxonomyAction, deactivateTaxonomyAction, updateTaxonomyAction } from "@/features/taxonomies/actions/taxonomy-actions";
 import { taxonomySchema, type TaxonomyInput } from "@/lib/validations/taxonomies";
-import type { Taxonomy } from "@/types/database";
+import type { Portfolio, Taxonomy } from "@/types/database";
 
 type Props = {
+  portfolios: Portfolio[];
   taxonomies: Taxonomy[];
 };
 
-export function TaxonomyManager({ taxonomies }: Props) {
+export function TaxonomyManager({ portfolios, taxonomies }: Props) {
   const [editing, setEditing] = useState<Taxonomy | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -70,7 +71,7 @@ export function TaxonomyManager({ taxonomies }: Props) {
               Nova taxonomia
             </Button>
           </DialogTrigger>
-          <TaxonomyForm taxonomy={editing} onClose={() => setOpen(false)} />
+          <TaxonomyForm taxonomy={editing} portfolios={portfolios} onClose={() => setOpen(false)} />
         </Dialog>
       </div>
 
@@ -79,6 +80,7 @@ export function TaxonomyManager({ taxonomies }: Props) {
           <TableRow>
             <TableHead>Codigo</TableHead>
             <TableHead>Nome</TableHead>
+            <TableHead>Carteira</TableHead>
             <TableHead>Descricao</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="w-40 text-right">Acoes</TableHead>
@@ -89,6 +91,7 @@ export function TaxonomyManager({ taxonomies }: Props) {
             <TableRow key={taxonomy.id}>
               <TableCell className="font-semibold">{taxonomy.code}</TableCell>
               <TableCell>{taxonomy.name}</TableCell>
+              <TableCell>{portfolios.find((portfolio) => portfolio.id === taxonomy.portfolio_id)?.name ?? "Sem carteira"}</TableCell>
               <TableCell className="max-w-md text-muted-foreground">{taxonomy.description ?? "Sem descricao"}</TableCell>
               <TableCell>
                 <Badge variant={taxonomy.is_active ? "success" : "secondary"}>
@@ -107,7 +110,7 @@ export function TaxonomyManager({ taxonomies }: Props) {
           ))}
           {taxonomies.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="p-6">
+              <TableCell colSpan={6} className="p-6">
                 <EmptyState
                   icon={Tags}
                   title="Nenhuma taxonomia cadastrada"
@@ -122,11 +125,20 @@ export function TaxonomyManager({ taxonomies }: Props) {
   );
 }
 
-function TaxonomyForm({ taxonomy, onClose }: { taxonomy: Taxonomy | null; onClose: () => void }) {
+function TaxonomyForm({
+  taxonomy,
+  portfolios,
+  onClose
+}: {
+  taxonomy: Taxonomy | null;
+  portfolios: Portfolio[];
+  onClose: () => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const form = useForm<TaxonomyInput>({
     resolver: zodResolver(taxonomySchema),
     values: {
+      portfolio_id: taxonomy?.portfolio_id ?? portfolios[0]?.id ?? "",
       code: taxonomy?.code ?? "",
       name: taxonomy?.name ?? "",
       description: taxonomy?.description ?? "",
@@ -157,6 +169,23 @@ function TaxonomyForm({ taxonomy, onClose }: { taxonomy: Taxonomy | null; onClos
         <DialogDescription>Use categorias demonstrativas nesta fase. Regras juridicas ficam para etapas futuras.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <div className="space-y-2">
+          <Label>Carteira</Label>
+          <Select value={form.watch("portfolio_id")} onValueChange={(value) => form.setValue("portfolio_id", value, { shouldDirty: true })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione a carteira" />
+            </SelectTrigger>
+            <SelectContent>
+              {portfolios.map((portfolio) => (
+                <SelectItem key={portfolio.id} value={portfolio.id}>
+                  {portfolio.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {form.formState.errors.portfolio_id ? <p className="text-sm text-destructive">{form.formState.errors.portfolio_id.message}</p> : null}
+        </div>
+
         <div className="grid gap-4 md:grid-cols-[0.35fr_0.65fr]">
           <div className="space-y-2">
             <Label htmlFor="code">Codigo</Label>

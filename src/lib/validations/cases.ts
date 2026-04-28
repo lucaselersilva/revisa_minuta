@@ -32,6 +32,7 @@ export const caseEntitySchema = z.object({
 
 export const caseFormSchema = z
   .object({
+    portfolio_id: z.string().uuid("Selecione a carteira do processo."),
     case_number: z.string().trim().optional(),
     title: z.string().trim().min(3, "Informe um titulo para o processo."),
     description: z.string().trim().optional(),
